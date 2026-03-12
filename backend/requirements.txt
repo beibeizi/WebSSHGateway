@@ -1,0 +1,10 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+SQLAlchemy==2.0.34
+pydantic==2.8.2
+PyJWT==2.9.0
+bcrypt==4.2.0
+cryptography==43.0.1
+asyncssh==2.16.0
+python-dotenv==1.0.1
+python-multipart==0.0.9

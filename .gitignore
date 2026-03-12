@@ -1,0 +1,44 @@
+# Operating system
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+backend/.venv/
+
+# Node.js
+node_modules/
+frontend/node_modules/
+
+# Build outputs
+frontend/dist/
+backend/frontend/dist/
+
+# Runtime data
+data/
+backend/data/
+frontend/data/
+*.db
+
+# Coverage
+.coverage
+coverage/
+htmlcov/

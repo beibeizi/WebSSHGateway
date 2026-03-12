@@ -1,0 +1,25 @@
+version: "3.9"
+services:
+  webssh:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - SECRET_KEY=replace-with-32-char-secret-123456
+      - DATABASE_URL=sqlite:////data/app.db
+      - PORT=8080
+      - LOG_LEVEL=INFO
+      - SESSION_KEEPALIVE_INTERVAL=60
+      - JWT_ISSUER=webssh-gateway
+      - JWT_ACCESS_TTL_HOURS=12
+      - JWT_REMEMBER_TTL_DAYS=7
+      - LOGIN_LOCK_MINUTES=15
+      - LOGIN_LOCK_THRESHOLD=5
+      - SSH_KNOWN_HOSTS=/data/known_hosts
+      - SSH_ALLOW_UNKNOWN_HOSTS=false
+      - CORS_ALLOW_ORIGINS=
+    volumes:
+      - webssh-data:/data
+
+volumes:
+  webssh-data:

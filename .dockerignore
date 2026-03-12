@@ -1,0 +1,26 @@
+.git
+.gitignore
+
+# Runtime artifacts
+**/__pycache__
+**/*.pyc
+**/*.pyo
+*.log
+
+# Local environments
+.env
+backend/.venv
+frontend/node_modules
+
+# Build outputs
+frontend/dist
+backend/frontend/dist
+
+# Data
+backend/data
+frontend/data
+*.db
+
+# Editor files
+.vscode
+.idea
