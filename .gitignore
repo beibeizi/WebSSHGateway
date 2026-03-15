@@ -42,3 +42,6 @@ frontend/data/
 .coverage
 coverage/
 htmlcov/
+
+# Tasks (local only)
+tasks/

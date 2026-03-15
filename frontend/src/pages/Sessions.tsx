@@ -1,4 +1,5 @@
 ﻿import React from "react";
+import { GripVertical } from "lucide-react";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -22,6 +23,7 @@ import {
   retrySession,
   updateConnection,
   updateSessionNote,
+  updateSessionOrder,
   getStoredToken
 } from "../lib/api";
 
@@ -44,6 +46,30 @@ function normalizeTargetProfile(raw: string | undefined | null): "good" | "degra
     return raw;
   }
   return "unknown";
+}
+
+function moveItem<T>(list: T[], fromIndex: number, toIndex: number): T[] {
+  const next = [...list];
+  const [item] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, item);
+  return next;
+}
+
+function mergeVisibleOrder(
+  fullOrder: string[],
+  visibleOrder: string[],
+  nextVisibleOrder: string[]
+): string[] {
+  const visibleSet = new Set(visibleOrder);
+  let visibleIndex = 0;
+  return fullOrder.map((id) => {
+    if (!visibleSet.has(id)) {
+      return id;
+    }
+    const nextId = nextVisibleOrder[visibleIndex];
+    visibleIndex += 1;
+    return nextId;
+  });
 }
 
 export function Sessions() {
@@ -90,6 +116,8 @@ export function Sessions() {
     newPassword: "",
     confirmPassword: "",
   });
+  const [draggingSessionId, setDraggingSessionId] = React.useState<string | null>(null);
+  const [savingOrder, setSavingOrder] = React.useState(false);
   const [enhancePrompt, setEnhancePrompt] = React.useState<{
     open: boolean;
     connectionId: number;
@@ -102,6 +130,9 @@ export function Sessions() {
   const t = React.useCallback((zh: string, en: string) => localizeText(language, zh, en), [language]);
   const sessionPollInFlightRef = React.useRef(false);
   const sessionsRef = React.useRef<Session[]>([]);
+  const draggingRef = React.useRef(false);
+  const orderDirtyRef = React.useRef(false);
+  const orderedIdsRef = React.useRef<string[]>([]);
   const targetOverviewProfile = React.useMemo<"good" | "degraded" | "poor" | "unknown">(() => {
     let current: "good" | "degraded" | "poor" | "unknown" = "unknown";
     for (const session of sessions) {
@@ -150,11 +181,23 @@ export function Sessions() {
     );
   }, []);
 
+  const preserveOrderIfDragging = React.useCallback((sessionList: Session[]) => {
+    if (!draggingRef.current) {
+      return sessionList;
+    }
+    const orderMap = new Map(sessionsRef.current.map((session) => [session.id, session.session_order]));
+    return sessionList.map((session) => (
+      orderMap.has(session.id)
+        ? { ...session, session_order: orderMap.get(session.id) }
+        : session
+    ));
+  }, []);
+
   const loadData = async () => {
     try {
       const [connectionList, sessionList] = await Promise.all([listConnections(), listSessions()]);
       setConnections(connectionList);
-      setSessions(sessionList);
+      setSessions(preserveOrderIfDragging(sessionList));
       setNoteDrafts((prev) => {
         const next = { ...prev };
         sessionList.forEach((session) => {
@@ -197,7 +240,7 @@ export function Sessions() {
       sessionPollInFlightRef.current = true;
       try {
         const sessionList = await listSessions();
-        setSessions(sessionList);
+        setSessions(preserveOrderIfDragging(sessionList));
         // 同步更新 noteDrafts 中已存在且未被本地修改的备注
         setNoteDrafts((prev) => {
           const previousSessions = sessionsRef.current;
@@ -282,7 +325,23 @@ export function Sessions() {
     return () => socket.close();
   }, [push, reportNetworkHint, t]);
 
-  const filteredSessions = sessions.filter((session) => {
+  const orderedSessions = React.useMemo(() => {
+    const normalizeOrder = (value?: number) => (value && value > 0 ? value : Number.MAX_SAFE_INTEGER);
+    return [...sessions].sort((a, b) => {
+      const orderA = normalizeOrder(a.session_order);
+      const orderB = normalizeOrder(b.session_order);
+      if (orderA !== orderB) {
+        return orderA - orderB;
+      }
+      return new Date(a.started_at).getTime() - new Date(b.started_at).getTime();
+    });
+  }, [sessions]);
+
+  React.useEffect(() => {
+    orderedIdsRef.current = orderedSessions.map((session) => session.id);
+  }, [orderedSessions]);
+
+  const filteredSessions = orderedSessions.filter((session) => {
     const matchStatus = filter === "all" || session.status === filter;
     const matchSearch = (session.name || "").toLowerCase().includes(search.toLowerCase());
     return matchStatus && matchSearch;
@@ -520,6 +579,67 @@ export function Sessions() {
     }
   };
 
+  const applySessionOrder = React.useCallback((orderedIds: string[]) => {
+    orderedIdsRef.current = orderedIds;
+    const orderMap = new Map(orderedIds.map((id, index) => [id, index + 1]));
+    setSessions((prev) => prev.map((session) => (
+      orderMap.has(session.id)
+        ? { ...session, session_order: orderMap.get(session.id) }
+        : session
+    )));
+  }, []);
+
+  const handleDragStart = (sessionId: string, event: React.DragEvent<HTMLButtonElement>) => {
+    if (savingOrder) {
+      event.preventDefault();
+      return;
+    }
+    draggingRef.current = true;
+    orderDirtyRef.current = false;
+    setDraggingSessionId(sessionId);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", sessionId);
+  };
+
+  const handleDragOver = (sessionId: string, event: React.DragEvent<HTMLDivElement>) => {
+    if (!draggingSessionId || draggingSessionId === sessionId) {
+      return;
+    }
+    event.preventDefault();
+    const visibleOrderIds = filteredSessions.map((session) => session.id);
+    if (!visibleOrderIds.includes(draggingSessionId) || !visibleOrderIds.includes(sessionId)) {
+      return;
+    }
+    const fromIndex = visibleOrderIds.indexOf(draggingSessionId);
+    const toIndex = visibleOrderIds.indexOf(sessionId);
+    if (fromIndex === toIndex) {
+      return;
+    }
+    const nextVisibleOrder = moveItem(visibleOrderIds, fromIndex, toIndex);
+    const nextFullOrder = mergeVisibleOrder(orderedIdsRef.current, visibleOrderIds, nextVisibleOrder);
+    applySessionOrder(nextFullOrder);
+    orderDirtyRef.current = true;
+  };
+
+  const handleDragEnd = async () => {
+    draggingRef.current = false;
+    setDraggingSessionId(null);
+    if (!orderDirtyRef.current) {
+      return;
+    }
+    orderDirtyRef.current = false;
+    setSavingOrder(true);
+    try {
+      await updateSessionOrder(orderedIdsRef.current);
+      push(t("排序已保存", "Order saved"));
+    } catch (error) {
+      push(error instanceof Error ? error.message : t("保存失败", "Save failed"));
+      await loadData();
+    } finally {
+      setSavingOrder(false);
+    }
+  };
+
   const resetPasswordForm = React.useCallback(() => {
     setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
   }, []);
@@ -652,31 +772,54 @@ export function Sessions() {
               {filteredSessions.map((session) => {
                 const noteValue = noteDrafts[session.id] ?? "";
                 return (
-                  <div key={session.id} className={`rounded-lg border p-4 ${isDark ? "border-slate-700 bg-slate-900/60" : "border-slate-200 bg-white shadow-sm"}`}>
+                  <div
+                    key={session.id}
+                    onDragOver={(event) => handleDragOver(session.id, event)}
+                    onDrop={(event) => event.preventDefault()}
+                    className={`rounded-lg border p-4 ${isDark ? "border-slate-700 bg-slate-900/60" : "border-slate-200 bg-white shadow-sm"}`}
+                  >
                     <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div className="space-y-1">
-                        <p className="text-lg font-semibold">{session.name}</p>
-                        <p className={`text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-                          {session.username}@{session.host}
-                        </p>
-                        <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>{t("状态", "Status")}: {mapSessionStatus(session.status)}</p>
-                        {session.enhanced_enabled ? (
-                          <p className={`text-xs font-medium ${isDark ? "text-indigo-300" : "text-indigo-600"}`}>
-                            {t("增强持久化连接", "Enhanced persistent connection")}
+                      <div className="flex items-start gap-3">
+                        <button
+                          type="button"
+                          draggable={!savingOrder}
+                          onDragStart={(event) => handleDragStart(session.id, event)}
+                          onDragEnd={handleDragEnd}
+                          disabled={savingOrder}
+                          aria-label={t("拖动调整排序", "Drag to reorder")}
+                          title={t("拖动调整排序", "Drag to reorder")}
+                          className={`rounded-md border p-2 transition ${
+                            isDark
+                              ? "border-slate-700 bg-slate-900/70 text-slate-400 hover:text-slate-200"
+                              : "border-slate-200 bg-white text-slate-500 hover:text-slate-700"
+                          } ${savingOrder ? "cursor-not-allowed opacity-50" : "cursor-grab active:cursor-grabbing"}`}
+                        >
+                          <GripVertical className="h-4 w-4" />
+                        </button>
+                        <div className="space-y-1">
+                          <p className="text-lg font-semibold">{session.name}</p>
+                          <p className={`text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                            {session.username}@{session.host}
                           </p>
-                        ) : null}
-                        <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>{t("创建时间", "Created at")}: {new Date(session.started_at).toLocaleString()}</p>
-                        <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>{t("最近活动", "Last activity")}: {new Date(session.last_activity).toLocaleString()}</p>
-                        {session.disconnected_at ? (
-                          <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>
-                            {t("断开时间", "Disconnected at")}: {new Date(session.disconnected_at).toLocaleString()}
-                          </p>
-                        ) : null}
-                        {session.enhanced_enabled && session.status !== "active" && session.allow_auto_retry !== false ? (
-                          <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>
-                            {t("本轮重试", "Retry cycle")}: {session.retry_cycle_count ?? 0}/3
-                          </p>
-                        ) : null}
+                          <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>{t("状态", "Status")}: {mapSessionStatus(session.status)}</p>
+                          {session.enhanced_enabled ? (
+                            <p className={`text-xs font-medium ${isDark ? "text-indigo-300" : "text-indigo-600"}`}>
+                              {t("增强持久化连接", "Enhanced persistent connection")}
+                            </p>
+                          ) : null}
+                          <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>{t("创建时间", "Created at")}: {new Date(session.started_at).toLocaleString()}</p>
+                          <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>{t("最近活动", "Last activity")}: {new Date(session.last_activity).toLocaleString()}</p>
+                          {session.disconnected_at ? (
+                            <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>
+                              {t("断开时间", "Disconnected at")}: {new Date(session.disconnected_at).toLocaleString()}
+                            </p>
+                          ) : null}
+                          {session.enhanced_enabled && session.status !== "active" && session.allow_auto_retry !== false ? (
+                            <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>
+                              {t("本轮重试", "Retry cycle")}: {session.retry_cycle_count ?? 0}/3
+                            </p>
+                          ) : null}
+                        </div>
                       </div>
                       <div className="flex gap-2">
                         {session.status === "active" ? (
@@ -1064,4 +1207,3 @@ export function Sessions() {
     </div>
   );
 }
-

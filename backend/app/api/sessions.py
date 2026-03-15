@@ -8,7 +8,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from app.api.dependencies import AppState, get_current_user, get_current_user_from_ws, get_db, get_state
 from app.core.db import utc_now
@@ -18,6 +18,7 @@ from app.models.connection import Connection
 from app.models.session import SessionRecord
 from app.schemas.api import (
     SessionCreateRequest,
+    SessionOrderUpdateRequest,
     SessionNoteUpdateRequest,
     SessionResponse,
     SessionStatusResponse,
@@ -140,6 +141,7 @@ def _build_session_response(
         username=conn.username,
         name=conn.name,
         note=record.note,
+        session_order=record.session_order or 0,
         enhanced_enabled=bool(record.enhanced_enabled),
         remote_arch=conn.remote_arch,
         remote_os=conn.remote_os,
@@ -165,7 +167,11 @@ def list_sessions(
     user=Depends(get_current_user),
     db=Depends(get_db),
 ) -> list[SessionResponse]:
-    records = db.execute(select(SessionRecord).where(SessionRecord.user_id == user.id)).scalars().all()
+    records = db.execute(
+        select(SessionRecord)
+        .where(SessionRecord.user_id == user.id)
+        .order_by(SessionRecord.session_order.asc(), SessionRecord.started_at.asc())
+    ).scalars().all()
     responses = []
     for record in records:
         conn = db.execute(select(Connection).where(Connection.id == record.connection_id)).scalar_one_or_none()
@@ -310,6 +316,11 @@ async def create_session(
     if conn.enhance_prompt_shown is False and payload.enable_enhanced_persistence and binary_match is not None:
         conn.enhance_prompt_shown = True
 
+    max_order = db.execute(
+        select(func.max(SessionRecord.session_order)).where(SessionRecord.user_id == user.id)
+    ).scalar_one()
+    next_order = (max_order or 0) + 1
+
     managed = await session_manager.create_session(
         connection=conn,
         auth_payload=auth_payload,
@@ -328,6 +339,7 @@ async def create_session(
         last_activity=utc_now(),
         pty_info=session_manager.serialize_pty(pty),
         note=None,
+        session_order=next_order,
         enhanced_enabled=enable_enhanced,
         enhanced_fingerprint=enhanced_fingerprint,
         tmux_binary_path=tmux_binary_path,
@@ -495,6 +507,48 @@ async def update_session_note(
     return response
 
 
+@router.patch("/order")
+def update_session_order(
+    payload: SessionOrderUpdateRequest,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+) -> dict:
+    records = db.execute(select(SessionRecord).where(SessionRecord.user_id == user.id)).scalars().all()
+    if not records:
+        return {"status": "ok"}
+
+    record_map = {record.id: record for record in records}
+    ordered_ids: list[str] = []
+    seen: set[str] = set()
+
+    for session_id in payload.ordered_ids:
+        if session_id in seen:
+            continue
+        if session_id not in record_map:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Session not found")
+        ordered_ids.append(session_id)
+        seen.add(session_id)
+
+    existing_sorted = sorted(
+        records,
+        key=lambda record: (
+            1 if (record.session_order is None or record.session_order <= 0) else 0,
+            record.session_order or 0,
+            record.started_at,
+        ),
+    )
+    for record in existing_sorted:
+        if record.id in seen:
+            continue
+        ordered_ids.append(record.id)
+        seen.add(record.id)
+
+    for index, session_id in enumerate(ordered_ids, start=1):
+        record_map[session_id].session_order = index
+
+    return {"status": "ok"}
+
+
 @router.websocket("/ws/terminal/{session_id}")
 async def terminal_socket(
     websocket: WebSocket,
@@ -622,4 +676,3 @@ async def terminal_socket(
             await websocket.close(code=1008)
         except Exception:
             pass
-
