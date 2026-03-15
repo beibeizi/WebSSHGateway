@@ -1,19 +1,26 @@
 ﻿from __future__ import annotations
 
 import asyncio
+import json
 import re
 import tempfile
 import os
 import tarfile
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import List
+from typing import List, AsyncIterator
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.api.dependencies import AppState, get_current_user, get_state
+from sqlalchemy import select
+
+from app.api.dependencies import AppState, get_current_user, get_state, get_db
+from app.models.connection import Connection
+from app.models.session import SessionRecord
+from app.services.crypto import CryptoService, EncryptedPayload
 
 router = APIRouter(prefix="/system", tags=["system"])
 
@@ -153,11 +160,48 @@ def build_upload_result(
     return UploadResult(uploaded=uploaded, skipped=skipped, failed=failed, errors=errors or []).model_dump()
 
 
-async def run_ssh_command(session, command: str, timeout: float = 5.0) -> str:
+@asynccontextmanager
+async def resolve_ssh_client(
+    session_id: str,
+    state: AppState,
+    user,
+    db,
+) -> AsyncIterator:
+    session = state.session_manager.get_session(session_id)
+    if session:
+        yield session.client
+        return
+
+    record = db.execute(
+        select(SessionRecord).where(SessionRecord.id == session_id, SessionRecord.user_id == user.id)
+    ).scalar_one_or_none()
+    if not record or record.status != "active":
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    conn = db.execute(
+        select(Connection).where(Connection.id == record.connection_id, Connection.user_id == user.id)
+    ).scalar_one_or_none()
+    if not conn:
+        raise HTTPException(status_code=404, detail="连接不存在")
+
+    crypto = CryptoService(state.config.secret_keys)
+    auth_data = json.loads(conn.auth_data)
+    decrypted = crypto.decrypt(EncryptedPayload(nonce=auth_data["nonce"], ciphertext=auth_data["ciphertext"]))
+    auth_payload = json.loads(decrypted)
+
+    client = await state.session_manager.connect_client(conn, auth_payload)
+    try:
+        yield client
+    finally:
+        client.close()
+
+
+async def run_ssh_command(session_or_client, command: str, timeout: float = 5.0) -> str:
     """在 SSH 会话中执行命令并返回输出"""
     try:
+        client = getattr(session_or_client, "client", session_or_client)
         result = await asyncio.wait_for(
-            session.client.run(command, check=False),
+            client.run(command, check=False),
             timeout=timeout
         )
         return result.stdout or ""
@@ -401,74 +445,62 @@ async def collect_system_overview(session) -> SystemOverview:
 async def get_system_stats(
     session_id: str,
     state: AppState = Depends(get_state),
-    _user: dict = Depends(get_current_user)
+    user=Depends(get_current_user),
+    db=Depends(get_db),
 ) -> SystemStats:
     """获取远程服务器系统状态信息（CPU、内存、交换区）"""
-    session = state.session_manager.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
+    async with resolve_ssh_client(session_id, state, user, db) as client:
+        stat1, meminfo, cpuinfo = await asyncio.gather(
+            run_ssh_command(client, "cat /proc/stat"),
+            run_ssh_command(client, "cat /proc/meminfo"),
+            run_ssh_command(client, "cat /proc/cpuinfo"),
+        )
 
-    # 骞惰鑾峰彇绗竴娆℃暟鎹?
-    stat1, meminfo, cpuinfo = await asyncio.gather(
-        run_ssh_command(session, "cat /proc/stat"),
-        run_ssh_command(session, "cat /proc/meminfo"),
-        run_ssh_command(session, "cat /proc/cpuinfo"),
-    )
+        interval = 0.3
+        await asyncio.sleep(interval)
+        stat2 = await run_ssh_command(client, "cat /proc/stat")
 
-    # 等待一小段时间再次获取 CPU 统计
-    interval = 0.3
-    await asyncio.sleep(interval)
-    stat2 = await run_ssh_command(session, "cat /proc/stat")
+        memory, swap = parse_memory_info(meminfo)
+        cpu = parse_cpu_info(stat1, stat2, cpuinfo)
 
-    # 解析数据
-    memory, swap = parse_memory_info(meminfo)
-    cpu = parse_cpu_info(stat1, stat2, cpuinfo)
-
-    return SystemStats(cpu=cpu, memory=memory, swap=swap)
+        return SystemStats(cpu=cpu, memory=memory, swap=swap)
 
 
 @router.get("/network/{session_id}", response_model=NetworkInfo)
 async def get_network_stats(
     session_id: str,
     state: AppState = Depends(get_state),
-    _user: dict = Depends(get_current_user)
+    user=Depends(get_current_user),
+    db=Depends(get_db),
 ) -> NetworkInfo:
     """获取远程服务器网络速度"""
-    session = state.session_manager.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
+    async with resolve_ssh_client(session_id, state, user, db) as client:
+        net1 = await run_ssh_command(client, "cat /proc/net/dev")
+        interval = 0.5
+        await asyncio.sleep(interval)
+        net2 = await run_ssh_command(client, "cat /proc/net/dev")
 
-    # 获取两次网络统计
-    net1 = await run_ssh_command(session, "cat /proc/net/dev")
-    interval = 0.5
-    await asyncio.sleep(interval)
-    net2 = await run_ssh_command(session, "cat /proc/net/dev")
-
-    return parse_network_stats(net1, net2, interval)
+        return parse_network_stats(net1, net2, interval)
 
 
 @router.get("/processes/{session_id}", response_model=ProcessList)
 async def get_processes(
     session_id: str,
     state: AppState = Depends(get_state),
-    _user: dict = Depends(get_current_user)
+    user=Depends(get_current_user),
+    db=Depends(get_db),
 ) -> ProcessList:
     """获取远程服务器进程列表"""
-    session = state.session_manager.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
+    async with resolve_ssh_client(session_id, state, user, db) as client:
+        ps_output = await run_ssh_command(
+            client,
+            "ps aux 2>/dev/null || ps -ef 2>/dev/null",
+            timeout=5.0
+        )
 
-    # 使用 ps 命令获取进程信息
-    ps_output = await run_ssh_command(
-        session,
-        "ps aux 2>/dev/null || ps -ef 2>/dev/null",
-        timeout=5.0
-    )
-
-    processes = parse_processes(ps_output)
-    # 鎸夊唴瀛樻帓搴忓彇鍓?20
-    processes.sort(key=lambda x: x.memory_bytes, reverse=True)
-    return ProcessList(processes=processes[:20])
+        processes = parse_processes(ps_output)
+        processes.sort(key=lambda x: x.memory_bytes, reverse=True)
+        return ProcessList(processes=processes[:20])
 
 
 def parse_ls_output(ls_output: str, base_path: str) -> List[FileInfo]:
@@ -557,59 +589,52 @@ async def list_directory(
     session_id: str,
     path: str = "/",
     state: AppState = Depends(get_state),
-    _user: dict = Depends(get_current_user)
+    user=Depends(get_current_user),
+    db=Depends(get_db),
 ) -> DirectoryListing:
     """列出远程服务器目录内容"""
-    session = state.session_manager.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
+    async with resolve_ssh_client(session_id, state, user, db) as client:
+        clean_path = sanitize_shell_path(path)
+        if not clean_path.startswith("/"):
+            clean_path = "/" + clean_path
 
-    # 规范化路径，防止路径遍历攻击
-    clean_path = sanitize_shell_path(path)
-    if not clean_path.startswith("/"):
-        clean_path = "/" + clean_path
+        ls_output = await run_ssh_command(
+            client,
+            f"ls -la '{clean_path}' 2>/dev/null",
+            timeout=10.0
+        )
 
-    # 使用 ls -la 获取目录内容
-    ls_output = await run_ssh_command(
-        session,
-        f"ls -la '{clean_path}' 2>/dev/null",
-        timeout=10.0
-    )
+        if not ls_output:
+            raise HTTPException(status_code=404, detail="目录不存在或无权访问")
 
-    if not ls_output:
-        raise HTTPException(status_code=404, detail="目录不存在或无权访问")
-
-    files = parse_ls_output(ls_output, clean_path)
-    return DirectoryListing(path=clean_path, files=files)
+        files = parse_ls_output(ls_output, clean_path)
+        return DirectoryListing(path=clean_path, files=files)
 
 
 @router.get("/disks/{session_id}", response_model=DiskList)
 async def get_disks(
     session_id: str,
     state: AppState = Depends(get_state),
-    _user: dict = Depends(get_current_user)
+    user=Depends(get_current_user),
+    db=Depends(get_db),
 ) -> DiskList:
     """获取磁盘挂载信息"""
-    session = state.session_manager.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
+    async with resolve_ssh_client(session_id, state, user, db) as client:
+        df_output = await run_ssh_command(client, "df -B1 | grep '^/'", timeout=5.0)
 
-    df_output = await run_ssh_command(session, "df -B1 | grep '^/'", timeout=5.0)
-
-    return DiskList(disks=parse_disks(df_output))
+        return DiskList(disks=parse_disks(df_output))
 
 
 @router.get("/overview/{session_id}", response_model=SystemOverview)
 async def get_system_overview(
     session_id: str,
     state: AppState = Depends(get_state),
-    _user: dict = Depends(get_current_user)
+    user=Depends(get_current_user),
+    db=Depends(get_db),
 ) -> SystemOverview:
     """一次返回系统状态、网络、进程和磁盘信息。"""
-    session = state.session_manager.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
-    return await collect_system_overview(session)
+    async with resolve_ssh_client(session_id, state, user, db) as client:
+        return await collect_system_overview(client)
 
 
 @router.get("/file/{session_id}")
@@ -618,24 +643,21 @@ async def read_file(
     path: str,
     force: bool = False,
     state: AppState = Depends(get_state),
-    _user: dict = Depends(get_current_user)
+    user=Depends(get_current_user),
+    db=Depends(get_db),
 ) -> dict:
     """读取文件内容"""
-    session = state.session_manager.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
+    async with resolve_ssh_client(session_id, state, user, db) as client:
+        clean_path = sanitize_shell_path(path)
 
-    clean_path = sanitize_shell_path(path)
+        size_check = await run_ssh_command(client, f"stat -c %s '{clean_path}' 2>/dev/null || echo 0")
+        size = int(size_check.strip() or 0)
 
-    # 检查文件大小
-    size_check = await run_ssh_command(session, f"stat -c %s '{clean_path}' 2>/dev/null || echo 0")
-    size = int(size_check.strip() or 0)
+        if size > 1024 * 1024 and not force:
+            return {"size": size, "too_large": True}
 
-    if size > 1024 * 1024 and not force:
-        return {"size": size, "too_large": True}
-
-    content = await run_ssh_command(session, f"cat '{clean_path}' 2>/dev/null", timeout=30.0)
-    return {"content": content, "size": size}
+        content = await run_ssh_command(client, f"cat '{clean_path}' 2>/dev/null", timeout=30.0)
+        return {"content": content, "size": size}
 
 
 @router.post("/file/{session_id}")
@@ -644,26 +666,24 @@ async def write_file(
     path: str,
     payload: FileContent,
     state: AppState = Depends(get_state),
-    _user: dict = Depends(get_current_user)
+    user=Depends(get_current_user),
+    db=Depends(get_db),
 ):
     """写入文件内容"""
-    session = state.session_manager.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
+    async with resolve_ssh_client(session_id, state, user, db) as client:
+        clean_path = sanitize_shell_path(path)
 
-    clean_path = sanitize_shell_path(path)
+        with tempfile.NamedTemporaryFile(mode='w', delete=False) as tmp:
+            tmp.write(payload.content)
+            tmp_path = tmp.name
 
-    with tempfile.NamedTemporaryFile(mode='w', delete=False) as tmp:
-        tmp.write(payload.content)
-        tmp_path = tmp.name
+        try:
+            async with client.start_sftp_client() as sftp:
+                await sftp.put(tmp_path, clean_path)
+        finally:
+            os.unlink(tmp_path)
 
-    try:
-        async with session.client.start_sftp_client() as sftp:
-            await sftp.put(tmp_path, clean_path)
-    finally:
-        os.unlink(tmp_path)
-
-    return {"status": "ok"}
+        return {"status": "ok"}
 
 
 @router.post("/upload/{session_id}")
@@ -673,46 +693,44 @@ async def upload_file(
     compress: bool = False,
     file: UploadFile = File(...),
     state: AppState = Depends(get_state),
-    _user: dict = Depends(get_current_user)
+    user=Depends(get_current_user),
+    db=Depends(get_db),
 ):
     """上传文件到远程服务器"""
-    session = state.session_manager.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
+    async with resolve_ssh_client(session_id, state, user, db) as client:
+        clean_path = sanitize_shell_path(path)
 
-    clean_path = sanitize_shell_path(path)
+        safe_filename = sanitize_upload_filename(file.filename)
 
-    safe_filename = sanitize_upload_filename(file.filename)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            local_path = ensure_within_directory(tmpdir, os.path.join(tmpdir, safe_filename))
+            content = await file.read()
+            with open(local_path, "wb") as f:
+                f.write(content)
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        local_path = ensure_within_directory(tmpdir, os.path.join(tmpdir, safe_filename))
-        content = await file.read()
-        with open(local_path, "wb") as f:
-            f.write(content)
+            errors: List[str] = []
+            uploaded = 0
 
-        errors: List[str] = []
-        uploaded = 0
+            try:
+                if compress:
+                    tar_path = os.path.join(tmpdir, f"{safe_filename}.tar.gz")
+                    create_tar_gz(tar_path, local_path, safe_filename)
 
-        try:
-            if compress:
-                tar_path = os.path.join(tmpdir, f"{safe_filename}.tar.gz")
-                create_tar_gz(tar_path, local_path, safe_filename)
+                    async with client.start_sftp_client() as sftp:
+                        await sftp.put(tar_path, f"{clean_path}/{safe_filename}.tar.gz")
 
-                async with session.client.start_sftp_client() as sftp:
-                    await sftp.put(tar_path, f"{clean_path}/{safe_filename}.tar.gz")
-
-                await run_ssh_command(
-                    session,
-                    f"cd '{clean_path}' && tar -xzf '{safe_filename}.tar.gz' && rm -f '{safe_filename}.tar.gz'",
-                    timeout=30.0,
-                )
-                uploaded = 1
-            else:
-                async with session.client.start_sftp_client() as sftp:
-                    await sftp.put(local_path, f"{clean_path}/{safe_filename}")
-                uploaded = 1
-        except Exception as exc:
-            errors.append(f"{safe_filename}: {exc}")
+                    await run_ssh_command(
+                        client,
+                        f"cd '{clean_path}' && tar -xzf '{safe_filename}.tar.gz' && rm -f '{safe_filename}.tar.gz'",
+                        timeout=30.0,
+                    )
+                    uploaded = 1
+                else:
+                    async with client.start_sftp_client() as sftp:
+                        await sftp.put(local_path, f"{clean_path}/{safe_filename}")
+                    uploaded = 1
+            except Exception as exc:
+                errors.append(f"{safe_filename}: {exc}")
 
     if errors:
         return build_upload_result(uploaded=uploaded, failed=len(errors), errors=errors)
@@ -726,37 +744,35 @@ async def upload_targz(
     path: str,
     file: UploadFile = File(...),
     state: AppState = Depends(get_state),
-    _user: dict = Depends(get_current_user)
+    user=Depends(get_current_user),
+    db=Depends(get_db),
 ):
     """上传 tar.gz 压缩包并解压"""
-    session = state.session_manager.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
+    async with resolve_ssh_client(session_id, state, user, db) as client:
+        clean_path = sanitize_shell_path(path)
 
-    clean_path = sanitize_shell_path(path)
+        with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
+            content = await file.read()
+            tmp.write(content)
+            tmp_path = tmp.name
 
-    with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
-        content = await file.read()
-        tmp.write(content)
-        tmp_path = tmp.name
+        errors: List[str] = []
+        uploaded = 0
 
-    errors: List[str] = []
-    uploaded = 0
+        try:
+            async with client.start_sftp_client() as sftp:
+                await sftp.put(tmp_path, f"{clean_path}/upload.tar.gz")
+            await run_ssh_command(client, f"cd '{clean_path}' && tar -xzf upload.tar.gz && rm -f upload.tar.gz", timeout=120.0)
+            uploaded = 1
+        except Exception as exc:
+            errors.append(f"upload.tar.gz: {exc}")
+        finally:
+            os.unlink(tmp_path)
 
-    try:
-        async with session.client.start_sftp_client() as sftp:
-            await sftp.put(tmp_path, f"{clean_path}/upload.tar.gz")
-        await run_ssh_command(session, f"cd '{clean_path}' && tar -xzf upload.tar.gz && rm -f upload.tar.gz", timeout=120.0)
-        uploaded = 1
-    except Exception as exc:
-        errors.append(f"upload.tar.gz: {exc}")
-    finally:
-        os.unlink(tmp_path)
+        if errors:
+            return build_upload_result(uploaded=uploaded, failed=len(errors), errors=errors)
 
-    if errors:
-        return build_upload_result(uploaded=uploaded, failed=len(errors), errors=errors)
-
-    return build_upload_result(uploaded=uploaded)
+        return build_upload_result(uploaded=uploaded)
 
 
 @router.post("/upload-zip/{session_id}")
@@ -765,37 +781,35 @@ async def upload_zip(
     path: str,
     file: UploadFile = File(...),
     state: AppState = Depends(get_state),
-    _user: dict = Depends(get_current_user)
+    user=Depends(get_current_user),
+    db=Depends(get_db),
 ):
     """上传 zip 压缩包并解压"""
-    session = state.session_manager.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
+    async with resolve_ssh_client(session_id, state, user, db) as client:
+        clean_path = sanitize_shell_path(path)
 
-    clean_path = sanitize_shell_path(path)
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+            content = await file.read()
+            tmp.write(content)
+            tmp_path = tmp.name
 
-    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
-        content = await file.read()
-        tmp.write(content)
-        tmp_path = tmp.name
+        errors: List[str] = []
+        uploaded = 0
 
-    errors: List[str] = []
-    uploaded = 0
+        try:
+            async with client.start_sftp_client() as sftp:
+                await sftp.put(tmp_path, f"{clean_path}/upload.zip")
+            await run_ssh_command(client, f"cd '{clean_path}' && unzip -q upload.zip && rm -f upload.zip", timeout=120.0)
+            uploaded = 1
+        except Exception as exc:
+            errors.append(f"upload.zip: {exc}")
+        finally:
+            os.unlink(tmp_path)
 
-    try:
-        async with session.client.start_sftp_client() as sftp:
-            await sftp.put(tmp_path, f"{clean_path}/upload.zip")
-        await run_ssh_command(session, f"cd '{clean_path}' && unzip -q upload.zip && rm -f upload.zip", timeout=120.0)
-        uploaded = 1
-    except Exception as exc:
-        errors.append(f"upload.zip: {exc}")
-    finally:
-        os.unlink(tmp_path)
+        if errors:
+            return build_upload_result(uploaded=uploaded, failed=len(errors), errors=errors)
 
-    if errors:
-        return build_upload_result(uploaded=uploaded, failed=len(errors), errors=errors)
-
-    return build_upload_result(uploaded=uploaded)
+        return build_upload_result(uploaded=uploaded)
 
 
 @router.post("/upload-batch/{session_id}")
@@ -806,72 +820,70 @@ async def upload_batch(
     concurrent: int = 3,
     files: List[UploadFile] = File(...),
     state: AppState = Depends(get_state),
-    _user: dict = Depends(get_current_user)
+    user=Depends(get_current_user),
+    db=Depends(get_db),
 ):
     """批量上传文件（支持文件夹结构）"""
-    session = state.session_manager.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
+    async with resolve_ssh_client(session_id, state, user, db) as client:
+        clean_path = sanitize_shell_path(path)
 
-    clean_path = sanitize_shell_path(path)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            written_files = 0
+            staged_files: List[tuple[str, str]] = []
+            errors: List[str] = []
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        written_files = 0
-        staged_files: List[tuple[str, str]] = []
-        errors: List[str] = []
+            for file in files:
+                relative_path = sanitize_upload_relative_path(file.filename)
+                file_path = ensure_within_directory(tmpdir, os.path.join(tmpdir, relative_path))
+                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                content = await file.read()
+                with open(file_path, "wb") as f:
+                    f.write(content)
 
-        for file in files:
-            relative_path = sanitize_upload_relative_path(file.filename)
-            file_path = ensure_within_directory(tmpdir, os.path.join(tmpdir, relative_path))
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            content = await file.read()
-            with open(file_path, "wb") as f:
-                f.write(content)
+                staged_files.append((relative_path, file_path))
+                written_files += 1
 
-            staged_files.append((relative_path, file_path))
-            written_files += 1
+            if compress:
+                tar_path = os.path.join(tmpdir, "upload.tar.gz")
+                with tarfile.open(tar_path, "w:gz") as tar:
+                    for relative_path, file_path in staged_files:
+                        tar.add(file_path, arcname=relative_path)
 
-        if compress:
-            tar_path = os.path.join(tmpdir, "upload.tar.gz")
-            with tarfile.open(tar_path, "w:gz") as tar:
-                for relative_path, file_path in staged_files:
-                    tar.add(file_path, arcname=relative_path)
+                try:
+                    async with client.start_sftp_client() as sftp:
+                        await sftp.put(tar_path, f"{clean_path}/upload.tar.gz")
 
-            try:
-                async with session.client.start_sftp_client() as sftp:
-                    await sftp.put(tar_path, f"{clean_path}/upload.tar.gz")
+                    await run_ssh_command(client, f"cd '{clean_path}' && tar -xzf upload.tar.gz && rm -f upload.tar.gz", timeout=60.0)
+                except Exception as exc:
+                    errors.append(f"upload.tar.gz: {exc}")
+                    return build_upload_result(uploaded=0, failed=written_files, errors=errors)
 
-                await run_ssh_command(session, f"cd '{clean_path}' && tar -xzf upload.tar.gz && rm -f upload.tar.gz", timeout=60.0)
-            except Exception as exc:
-                errors.append(f"upload.tar.gz: {exc}")
-                return build_upload_result(uploaded=0, failed=written_files, errors=errors)
+                return build_upload_result(uploaded=written_files)
 
-            return build_upload_result(uploaded=written_files)
+            uploaded = 0
+            queue = list(staged_files)
+            concurrency = max(1, min(concurrent, 8))
+            semaphore = asyncio.Semaphore(concurrency)
 
-        uploaded = 0
-        queue = list(staged_files)
-        concurrency = max(1, min(concurrent, 8))
-        semaphore = asyncio.Semaphore(concurrency)
+            async def upload_one(relative_path: str, file_path: str) -> bool:
+                remote_path = f"{clean_path}/{relative_path}"
+                remote_dir = os.path.dirname(remote_path)
 
-        async def upload_one(relative_path: str, file_path: str) -> bool:
-            remote_path = f"{clean_path}/{relative_path}"
-            remote_dir = os.path.dirname(remote_path)
+                try:
+                    async with semaphore:
+                        await run_ssh_command(client, f"mkdir -p '{remote_dir}'")
+                        async with client.start_sftp_client() as sftp:
+                            await sftp.put(file_path, remote_path)
+                    return True
+                except Exception as exc:
+                    errors.append(f"{relative_path}: {exc}")
+                    return False
 
-            try:
-                async with semaphore:
-                    await run_ssh_command(session, f"mkdir -p '{remote_dir}'")
-                    async with session.client.start_sftp_client() as sftp:
-                        await sftp.put(file_path, remote_path)
-                return True
-            except Exception as exc:
-                errors.append(f"{relative_path}: {exc}")
-                return False
+            results = await asyncio.gather(*(upload_one(relative_path, file_path) for relative_path, file_path in queue))
+            uploaded = sum(1 for ok in results if ok)
 
-        results = await asyncio.gather(*(upload_one(relative_path, file_path) for relative_path, file_path in queue))
-        uploaded = sum(1 for ok in results if ok)
-
-    failed = len(errors)
-    return build_upload_result(uploaded=uploaded, failed=failed, errors=errors)
+        failed = len(errors)
+        return build_upload_result(uploaded=uploaded, failed=failed, errors=errors)
 
 
 @router.post("/mkdir/{session_id}")
@@ -879,15 +891,14 @@ async def make_directory(
     session_id: str,
     path: str,
     state: AppState = Depends(get_state),
-    _user: dict = Depends(get_current_user)
+    user=Depends(get_current_user),
+    db=Depends(get_db),
 ):
     """创建目录"""
-    session = state.session_manager.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
-    clean_path = sanitize_shell_path(path)
-    await run_ssh_command(session, f"mkdir -p '{clean_path}'")
-    return {"status": "ok"}
+    async with resolve_ssh_client(session_id, state, user, db) as client:
+        clean_path = sanitize_shell_path(path)
+        await run_ssh_command(client, f"mkdir -p '{clean_path}'")
+        return {"status": "ok"}
 
 
 @router.post("/touch/{session_id}")
@@ -895,15 +906,14 @@ async def touch_file(
     session_id: str,
     path: str,
     state: AppState = Depends(get_state),
-    _user: dict = Depends(get_current_user)
+    user=Depends(get_current_user),
+    db=Depends(get_db),
 ):
     """创建文件"""
-    session = state.session_manager.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
-    clean_path = sanitize_shell_path(path)
-    await run_ssh_command(session, f"touch '{clean_path}'")
-    return {"status": "ok"}
+    async with resolve_ssh_client(session_id, state, user, db) as client:
+        clean_path = sanitize_shell_path(path)
+        await run_ssh_command(client, f"touch '{clean_path}'")
+        return {"status": "ok"}
 
 
 @router.post("/rename/{session_id}")
@@ -912,16 +922,15 @@ async def rename_file(
     old_path: str,
     new_path: str,
     state: AppState = Depends(get_state),
-    _user: dict = Depends(get_current_user)
+    user=Depends(get_current_user),
+    db=Depends(get_db),
 ):
     """重命名文件或目录"""
-    session = state.session_manager.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
-    clean_old = sanitize_shell_path(old_path)
-    clean_new = sanitize_shell_path(new_path)
-    await run_ssh_command(session, f"mv '{clean_old}' '{clean_new}'")
-    return {"status": "ok"}
+    async with resolve_ssh_client(session_id, state, user, db) as client:
+        clean_old = sanitize_shell_path(old_path)
+        clean_new = sanitize_shell_path(new_path)
+        await run_ssh_command(client, f"mv '{clean_old}' '{clean_new}'")
+        return {"status": "ok"}
 
 
 @router.post("/chmod/{session_id}")
@@ -931,17 +940,16 @@ async def change_mode(
     mode: str,
     recursive: bool = False,
     state: AppState = Depends(get_state),
-    _user: dict = Depends(get_current_user)
+    user=Depends(get_current_user),
+    db=Depends(get_db),
 ):
     """修改文件权限"""
-    session = state.session_manager.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
-    clean_path = sanitize_shell_path(path)
-    clean_mode = sanitize_shell_path(mode)
-    recursive_flag = "-R " if recursive else ""
-    await run_ssh_command(session, f"chmod {recursive_flag}{clean_mode} '{clean_path}'")
-    return {"status": "ok"}
+    async with resolve_ssh_client(session_id, state, user, db) as client:
+        clean_path = sanitize_shell_path(path)
+        clean_mode = sanitize_shell_path(mode)
+        recursive_flag = "-R " if recursive else ""
+        await run_ssh_command(client, f"chmod {recursive_flag}{clean_mode} '{clean_path}'")
+        return {"status": "ok"}
 
 
 @router.delete("/delete/{session_id}")
@@ -949,15 +957,14 @@ async def delete_file(
     session_id: str,
     path: str,
     state: AppState = Depends(get_state),
-    _user: dict = Depends(get_current_user)
+    user=Depends(get_current_user),
+    db=Depends(get_db),
 ):
     """删除文件或目录"""
-    session = state.session_manager.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
-    clean_path = sanitize_shell_path(path)
-    await run_ssh_command(session, f"rm -rf '{clean_path}'")
-    return {"status": "ok"}
+    async with resolve_ssh_client(session_id, state, user, db) as client:
+        clean_path = sanitize_shell_path(path)
+        await run_ssh_command(client, f"rm -rf '{clean_path}'")
+        return {"status": "ok"}
 
 
 @router.get("/download/{session_id}")
@@ -965,71 +972,65 @@ async def download_file(
     session_id: str,
     path: str,
     state: AppState = Depends(get_state),
-    _user: dict = Depends(get_current_user)
+    user=Depends(get_current_user),
+    db=Depends(get_db),
 ):
     """从远程服务器下载文件"""
-    session = state.session_manager.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
+    async with resolve_ssh_client(session_id, state, user, db) as client:
+        clean_path = sanitize_shell_path(path)
 
-    clean_path = sanitize_shell_path(path)
+        check_result = await run_ssh_command(client, f"[ -d '{clean_path}' ] && echo 'dir' || echo 'file'")
+        is_dir = check_result.strip() == "dir"
 
-    # 检查是否为目录
-    check_result = await run_ssh_command(session, f"[ -d '{clean_path}' ] && echo 'dir' || echo 'file'")
-    is_dir = check_result.strip() == "dir"
+        filename = os.path.basename(clean_path)
 
-    filename = os.path.basename(clean_path)
+        if is_dir:
+            tar_name = f"{filename}.tar.gz"
+            remote_tar = f"/tmp/{tar_name}"
+            await run_ssh_command(client, f"tar -czf {remote_tar} -C {os.path.dirname(clean_path)} {filename}", timeout=60.0)
 
-    if is_dir:
-        # 压缩目录
-        tar_name = f"{filename}.tar.gz"
-        remote_tar = f"/tmp/{tar_name}"
-        await run_ssh_command(session, f"tar -czf {remote_tar} -C {os.path.dirname(clean_path)} {filename}", timeout=60.0)
+            with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                tmp_path = tmp.name
 
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            tmp_path = tmp.name
+            try:
+                async with client.start_sftp_client() as sftp:
+                    await sftp.get(remote_tar, tmp_path)
 
-        try:
-            async with session.client.start_sftp_client() as sftp:
-                await sftp.get(remote_tar, tmp_path)
+                await run_ssh_command(client, f"rm {remote_tar}")
 
-            await run_ssh_command(session, f"rm {remote_tar}")
+                with open(tmp_path, "rb") as f:
+                    content = f.read()
 
-            with open(tmp_path, "rb") as f:
-                content = f.read()
+                encoded_filename = quote(tar_name)
+                return StreamingResponse(
+                    iter([content]),
+                    media_type="application/gzip",
+                    headers={
+                        "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+                        "Content-Length": str(len(content)),
+                    },
+                )
+            finally:
+                os.unlink(tmp_path)
+        else:
+            with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                tmp_path = tmp.name
 
-            encoded_filename = quote(tar_name)
-            return StreamingResponse(
-                iter([content]),
-                media_type="application/gzip",
-                headers={
-                    "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
-                    "Content-Length": str(len(content)),
-                },
-            )
-        finally:
-            os.unlink(tmp_path)
-    else:
-        # 直接下载文件
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            tmp_path = tmp.name
+            try:
+                async with client.start_sftp_client() as sftp:
+                    await sftp.get(clean_path, tmp_path)
 
-        try:
-            async with session.client.start_sftp_client() as sftp:
-                await sftp.get(clean_path, tmp_path)
+                with open(tmp_path, "rb") as f:
+                    content = f.read()
 
-            with open(tmp_path, "rb") as f:
-                content = f.read()
-
-            encoded_filename = quote(filename)
-            return StreamingResponse(
-                iter([content]),
-                media_type="application/octet-stream",
-                headers={
-                    "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
-                    "Content-Length": str(len(content)),
-                },
-            )
-        finally:
-            os.unlink(tmp_path)
-
+                encoded_filename = quote(filename)
+                return StreamingResponse(
+                    iter([content]),
+                    media_type="application/octet-stream",
+                    headers={
+                        "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+                        "Content-Length": str(len(content)),
+                    },
+                )
+            finally:
+                os.unlink(tmp_path)

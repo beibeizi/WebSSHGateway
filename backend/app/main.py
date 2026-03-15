@@ -160,7 +160,7 @@ def create_app() -> FastAPI:
                 if response.status_code != 404 or request.method != "GET":
                     return response
                 path = request.url.path
-                if path.startswith("/api") or path.startswith("/auth") or path.startswith("/sessions"):
+                if path.startswith("/api") or path.startswith("/auth") or path.startswith("/sessions") or path.startswith("/system"):
                     return response
                 return index_response
 
