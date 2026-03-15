@@ -778,45 +778,51 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
     }
   }, [sessionId, push, t]);
 
-  const handleContextDownload = React.useCallback(async () => {
-    if (!contextMenu) return;
-    setContextMenu(null);
+  const getSelectedFiles = React.useCallback(() => {
+    if (selectedFiles.size === 0) {
+      return [];
+    }
+    return Array.from(selectedFiles)
+      .map(path => files.find(f => f.path === path))
+      .filter(Boolean) as FileInfo[];
+  }, [files, selectedFiles]);
 
-    const filesToDownload =
-      selectedFiles.size > 0
-        ? (Array.from(selectedFiles).map(path => files.find(f => f.path === path)).filter(Boolean) as FileInfo[])
-        : contextMenu.files;
-    if (filesToDownload.length === 0) return;
-    await downloadItemsWithProgress(filesToDownload);
-  }, [contextMenu, selectedFiles, files, downloadItemsWithProgress]);
+  const handleActionForFiles = React.useCallback((
+    action: "mkdir" | "touch" | "rename" | "chmod" | "delete" | "download",
+    filesForAction: FileInfo[]
+  ) => {
+    if (action === "delete") {
+      if (filesForAction.length === 0) return;
+      if (confirm(t(`确定删除 ${filesForAction.length} 个项目？`, `Delete ${filesForAction.length} item(s)?`))) {
+        Promise.all(filesForAction.map(file => deletePath(sessionId, file.path))).then(() => {
+          push(t("删除成功", "Deleted successfully"));
+          setSelectedFiles(new Set());
+          loadDirectory(selectedPathRef.current, false, { forceRefresh: true, preferCache: false });
+        }).catch(() => push(t("删除失败", "Delete failed")));
+      }
+      return;
+    }
+    if (action === "download") {
+      if (filesForAction.length === 0) return;
+      void downloadItemsWithProgress(filesForAction);
+      return;
+    }
+
+    setDialog({ type: action, files: filesForAction });
+    if (action === "rename") {
+      setDialogInput(filesForAction[0]?.name || "");
+    } else if (action === "chmod") {
+      setDialogInput(permissionsToOctal(filesForAction[0]?.permissions || ""));
+    } else {
+      setDialogInput("");
+    }
+  }, [sessionId, push, t, downloadItemsWithProgress, loadDirectory]);
 
   const handleContextAction = React.useCallback((action: "mkdir" | "touch" | "rename" | "chmod" | "delete" | "download") => {
     if (!contextMenu) return;
-    const { files } = contextMenu;
     setContextMenu(null);
-
-    if (action === "delete") {
-      if (files.length === 0) return;
-      if (confirm(t(`确定删除 ${files.length} 个项目？`, `Delete ${files.length} item(s)?`))) {
-        Promise.all(files.map(file => deletePath(sessionId, file.path))).then(() => {
-          push(t("删除成功", "Deleted successfully"));
-          setSelectedFiles(new Set());
-          loadDirectory(selectedPath, false, { forceRefresh: true, preferCache: false });
-        }).catch(() => push(t("删除失败", "Delete failed")));
-      }
-    } else if (action === "download") {
-      handleContextDownload();
-    } else {
-      setDialog({ type: action, files });
-      if (action === "rename") {
-        setDialogInput(files[0]?.name || "");
-      } else if (action === "chmod") {
-        setDialogInput(permissionsToOctal(files[0]?.permissions || ""));
-      } else {
-        setDialogInput("");
-      }
-    }
-  }, [contextMenu, sessionId, push, loadDirectory, selectedPath, t]);
+    handleActionForFiles(action, contextMenu.files);
+  }, [contextMenu, handleActionForFiles]);
 
   const handleDialogSubmit = React.useCallback(async () => {
     if (!dialog || !dialogInput.trim()) return;
@@ -984,6 +990,12 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
     onFileSelect?.(null);
   }, [onFileSelect]);
 
+  const handleClearSelection = React.useCallback(() => {
+    setSelectedFile(null);
+    setSelectedFiles(new Set());
+    onFileSelect?.(null);
+  }, [onFileSelect]);
+
   const loadDirectoryRef = React.useRef(loadDirectory);
   const toggleNodeRef = React.useRef(toggleNode);
 
@@ -1074,6 +1086,10 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
     downloadStats && downloadStats.totalBytes > 0
       ? calculatePercent(downloadStats.loadedBytes, downloadStats.totalBytes)
       : null;
+  const selectedItems = getSelectedFiles();
+  const selectedCount = selectedItems.length;
+  const canRename = selectedCount === 1;
+  const hasSelection = selectedCount > 0;
 
   const rowPaddingClass = isCompact ? "py-2" : "py-1";
   const rowTextClass = isCompact ? "text-sm" : "text-xs";
@@ -1129,6 +1145,68 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
           </label>
         </div>
       </div>
+
+      {isCompact ? (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className={`rounded-full px-2 py-1 ${isDark ? "bg-slate-800 text-slate-300" : "bg-slate-200 text-slate-600"}`}>
+            {t("已选", "Selected")} {selectedCount}
+          </span>
+          <button
+            type="button"
+            onClick={() => handleActionForFiles("mkdir", [])}
+            className={`rounded-full px-3 py-2 ${isDark ? "bg-slate-800 text-slate-200" : "bg-white text-slate-700 border border-slate-200"}`}
+          >
+            {t("新建文件夹", "New folder")}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleActionForFiles("touch", [])}
+            className={`rounded-full px-3 py-2 ${isDark ? "bg-slate-800 text-slate-200" : "bg-white text-slate-700 border border-slate-200"}`}
+          >
+            {t("新建文件", "New file")}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleActionForFiles("rename", selectedItems)}
+            disabled={!canRename}
+            className={`rounded-full px-3 py-2 ${canRename ? "" : "opacity-40 cursor-not-allowed"} ${isDark ? "bg-slate-800 text-slate-200" : "bg-white text-slate-700 border border-slate-200"}`}
+          >
+            {t("重命名", "Rename")}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleActionForFiles("chmod", selectedItems)}
+            disabled={!hasSelection}
+            className={`rounded-full px-3 py-2 ${hasSelection ? "" : "opacity-40 cursor-not-allowed"} ${isDark ? "bg-slate-800 text-slate-200" : "bg-white text-slate-700 border border-slate-200"}`}
+          >
+            {t("权限", "Permissions")}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleActionForFiles("download", selectedItems)}
+            disabled={!hasSelection}
+            className={`rounded-full px-3 py-2 ${hasSelection ? "" : "opacity-40 cursor-not-allowed"} ${isDark ? "bg-slate-800 text-slate-200" : "bg-white text-slate-700 border border-slate-200"}`}
+          >
+            {t("下载", "Download")}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleActionForFiles("delete", selectedItems)}
+            disabled={!hasSelection}
+            className={`rounded-full px-3 py-2 ${hasSelection ? "" : "opacity-40 cursor-not-allowed"} ${isDark ? "bg-rose-900/60 text-rose-200" : "bg-rose-50 text-rose-600 border border-rose-200"}`}
+          >
+            {t("删除", "Delete")}
+          </button>
+          <button
+            type="button"
+            onClick={handleClearSelection}
+            disabled={!hasSelection}
+            className={`rounded-full px-3 py-2 ${hasSelection ? "" : "opacity-40 cursor-not-allowed"} ${isDark ? "bg-slate-800 text-slate-200" : "bg-white text-slate-700 border border-slate-200"}`}
+          >
+            {t("取消选择", "Clear")}
+          </button>
+        </div>
+      ) : null}
 
       <div
         className={`flex rounded border flex-1 min-h-0 ${isCompact ? "flex-col" : ""} ${isDark ? "border-slate-700" : "border-slate-200"} ${(uploading || downloading) ? "opacity-50" : ""} relative`}
