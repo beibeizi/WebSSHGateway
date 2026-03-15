@@ -1,5 +1,5 @@
 ﻿import React from "react";
-import { GripVertical } from "lucide-react";
+import { ArrowUpDown } from "lucide-react";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -133,6 +133,8 @@ export function Sessions() {
   const draggingRef = React.useRef(false);
   const orderDirtyRef = React.useRef(false);
   const orderedIdsRef = React.useRef<string[]>([]);
+  const cardRefs = React.useRef(new Map<string, HTMLDivElement>());
+  const previousPositionsRef = React.useRef(new Map<string, DOMRect>());
   const targetOverviewProfile = React.useMemo<"good" | "degraded" | "poor" | "unknown">(() => {
     let current: "good" | "degraded" | "poor" | "unknown" = "unknown";
     for (const session of sessions) {
@@ -346,6 +348,37 @@ export function Sessions() {
     const matchSearch = (session.name || "").toLowerCase().includes(search.toLowerCase());
     return matchStatus && matchSearch;
   });
+
+  React.useLayoutEffect(() => {
+    const nextPositions = new Map<string, DOMRect>();
+    filteredSessions.forEach((session) => {
+      const element = cardRefs.current.get(session.id);
+      if (element) {
+        nextPositions.set(session.id, element.getBoundingClientRect());
+      }
+    });
+
+    const previousPositions = previousPositionsRef.current;
+    nextPositions.forEach((nextRect, sessionId) => {
+      const previousRect = previousPositions.get(sessionId);
+      if (!previousRect) {
+        return;
+      }
+      const deltaY = previousRect.top - nextRect.top;
+      if (deltaY === 0) {
+        return;
+      }
+      const element = cardRefs.current.get(sessionId);
+      if (!element) {
+        return;
+      }
+      element.style.transform = `translateY(${deltaY}px)`;
+      element.getBoundingClientRect();
+      element.style.transform = "";
+    });
+
+    previousPositionsRef.current = nextPositions;
+  }, [filteredSessions]);
 
   const handleCreateConnection = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -606,6 +639,7 @@ export function Sessions() {
       return;
     }
     event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
     const visibleOrderIds = filteredSessions.map((session) => session.id);
     if (!visibleOrderIds.includes(draggingSessionId) || !visibleOrderIds.includes(sessionId)) {
       return;
@@ -774,52 +808,59 @@ export function Sessions() {
                 return (
                   <div
                     key={session.id}
+                    ref={(element) => {
+                      if (element) {
+                        cardRefs.current.set(session.id, element);
+                      } else {
+                        cardRefs.current.delete(session.id);
+                      }
+                    }}
                     onDragOver={(event) => handleDragOver(session.id, event)}
                     onDrop={(event) => event.preventDefault()}
-                    className={`rounded-lg border p-4 ${isDark ? "border-slate-700 bg-slate-900/60" : "border-slate-200 bg-white shadow-sm"}`}
+                    className={`relative rounded-lg border p-4 pl-12 transition-transform duration-200 ease-out ${
+                      draggingSessionId === session.id ? "ring-2 ring-indigo-400/60" : ""
+                    } ${isDark ? "border-slate-700 bg-slate-900/60" : "border-slate-200 bg-white shadow-sm"}`}
                   >
+                    <button
+                      type="button"
+                      draggable={!savingOrder}
+                      onDragStart={(event) => handleDragStart(session.id, event)}
+                      onDragEnd={handleDragEnd}
+                      disabled={savingOrder}
+                      aria-label={t("拖动调整排序", "Drag to reorder")}
+                      title={t("拖动调整排序", "Drag to reorder")}
+                      className={`absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border p-2 shadow-sm transition ${
+                        isDark
+                          ? "border-slate-700 bg-slate-900 text-slate-400 hover:text-slate-200"
+                          : "border-slate-200 bg-white text-slate-500 hover:text-slate-700"
+                      } ${savingOrder ? "cursor-not-allowed opacity-50" : "cursor-grab active:cursor-grabbing"}`}
+                    >
+                      <ArrowUpDown className="h-4 w-4" />
+                    </button>
                     <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div className="flex items-start gap-3">
-                        <button
-                          type="button"
-                          draggable={!savingOrder}
-                          onDragStart={(event) => handleDragStart(session.id, event)}
-                          onDragEnd={handleDragEnd}
-                          disabled={savingOrder}
-                          aria-label={t("拖动调整排序", "Drag to reorder")}
-                          title={t("拖动调整排序", "Drag to reorder")}
-                          className={`rounded-md border p-2 transition ${
-                            isDark
-                              ? "border-slate-700 bg-slate-900/70 text-slate-400 hover:text-slate-200"
-                              : "border-slate-200 bg-white text-slate-500 hover:text-slate-700"
-                          } ${savingOrder ? "cursor-not-allowed opacity-50" : "cursor-grab active:cursor-grabbing"}`}
-                        >
-                          <GripVertical className="h-4 w-4" />
-                        </button>
-                        <div className="space-y-1">
-                          <p className="text-lg font-semibold">{session.name}</p>
-                          <p className={`text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-                            {session.username}@{session.host}
+                      <div className="space-y-1">
+                        <p className="text-lg font-semibold">{session.name}</p>
+                        <p className={`text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                          {session.username}@{session.host}
+                        </p>
+                        <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>{t("状态", "Status")}: {mapSessionStatus(session.status)}</p>
+                        {session.enhanced_enabled ? (
+                          <p className={`text-xs font-medium ${isDark ? "text-indigo-300" : "text-indigo-600"}`}>
+                            {t("增强持久化连接", "Enhanced persistent connection")}
                           </p>
-                          <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>{t("状态", "Status")}: {mapSessionStatus(session.status)}</p>
-                          {session.enhanced_enabled ? (
-                            <p className={`text-xs font-medium ${isDark ? "text-indigo-300" : "text-indigo-600"}`}>
-                              {t("增强持久化连接", "Enhanced persistent connection")}
-                            </p>
-                          ) : null}
-                          <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>{t("创建时间", "Created at")}: {new Date(session.started_at).toLocaleString()}</p>
-                          <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>{t("最近活动", "Last activity")}: {new Date(session.last_activity).toLocaleString()}</p>
-                          {session.disconnected_at ? (
-                            <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>
-                              {t("断开时间", "Disconnected at")}: {new Date(session.disconnected_at).toLocaleString()}
-                            </p>
-                          ) : null}
-                          {session.enhanced_enabled && session.status !== "active" && session.allow_auto_retry !== false ? (
-                            <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>
-                              {t("本轮重试", "Retry cycle")}: {session.retry_cycle_count ?? 0}/3
-                            </p>
-                          ) : null}
-                        </div>
+                        ) : null}
+                        <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>{t("创建时间", "Created at")}: {new Date(session.started_at).toLocaleString()}</p>
+                        <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>{t("最近活动", "Last activity")}: {new Date(session.last_activity).toLocaleString()}</p>
+                        {session.disconnected_at ? (
+                          <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>
+                            {t("断开时间", "Disconnected at")}: {new Date(session.disconnected_at).toLocaleString()}
+                          </p>
+                        ) : null}
+                        {session.enhanced_enabled && session.status !== "active" && session.allow_auto_retry !== false ? (
+                          <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>
+                            {t("本轮重试", "Retry cycle")}: {session.retry_cycle_count ?? 0}/3
+                          </p>
+                        ) : null}
                       </div>
                       <div className="flex gap-2">
                         {session.status === "active" ? (
