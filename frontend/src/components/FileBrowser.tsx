@@ -59,6 +59,7 @@ type FileBrowserProps = {
   currentDir?: string;
   onFileSelect?: (path: string | null) => void;
   networkProfile?: NetworkProfile;
+  compact?: boolean;
 };
 
 type UploadStats = {
@@ -106,10 +107,11 @@ function createRootTree(): TreeNode[] {
   return [{ name: "/", path: "/", expanded: true, loaded: false }];
 }
 
-export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, networkProfile }: FileBrowserProps) {
+export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, networkProfile, compact }: FileBrowserProps) {
   const { networkProfile: globalNetworkProfile, language } = useApp();
   const t = React.useCallback((zh: string, en: string) => localizeText(language, zh, en), [language]);
   const effectiveNetworkProfile = networkProfile ?? globalNetworkProfile;
+  const isCompact = compact === true;
   const directoryCacheTtlMs =
     effectiveNetworkProfile === "poor" ? 12000 : effectiveNetworkProfile === "degraded" ? 6000 : 3000;
   const currentDirDebounceMs =
@@ -1018,7 +1020,7 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
     return (
       <div key={node.path}>
         <div
-          className={`flex items-center gap-1 py-0.5 px-1 rounded cursor-pointer text-xs truncate ${
+          className={`flex items-center gap-1 ${isCompact ? "py-1 text-sm" : "py-0.5 text-xs"} px-1 rounded cursor-pointer truncate ${
             isSelected
               ? (isDark ? "bg-indigo-600/50 text-white" : "bg-indigo-100 text-indigo-700")
               : (isDark ? "hover:bg-slate-700 text-slate-300" : "hover:bg-slate-100 text-slate-600")
@@ -1073,8 +1075,12 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
       ? calculatePercent(downloadStats.loadedBytes, downloadStats.totalBytes)
       : null;
 
+  const rowPaddingClass = isCompact ? "py-2" : "py-1";
+  const rowTextClass = isCompact ? "text-sm" : "text-xs";
+  const tableColSpan = isCompact ? 2 : 5;
+
   return (
-    <div className="space-y-2 h-full flex flex-col">
+    <div className={`space-y-2 h-full flex flex-col ${isCompact ? "text-sm" : ""}`}>
       <div className="flex items-center gap-2">
         <h3 className={`text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-700"}`}>
           {t("文件浏览", "File Browser")}
@@ -1082,48 +1088,50 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
       </div>
 
       {/* 路径输入框 */}
-      <div className="flex items-center gap-2">
+      <div className={`flex ${isCompact ? "flex-col items-stretch gap-2" : "items-center gap-2"}`}>
         <input
           type="text"
           value={pathInput}
           onChange={(e) => setPathInput(e.target.value)}
           onKeyDown={handlePathSubmit}
           placeholder={t("输入路径，按回车跳转", "Input path and press Enter")}
-          className={`flex-1 px-2 py-1 text-xs rounded border ${
+          className={`flex-1 px-2 ${isCompact ? "py-2 text-sm" : "py-1 text-xs"} rounded border ${
             isDark
               ? "bg-slate-800 border-slate-600 text-slate-200 placeholder:text-slate-500 focus:border-indigo-500"
               : "bg-white border-slate-300 text-slate-700 placeholder:text-slate-400 focus:border-indigo-400"
           } focus:outline-none`}
         />
-        <button
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className={`px-2 py-1 text-xs rounded border ${
+        <div className={`flex items-center gap-2 ${isCompact ? "flex-wrap" : ""}`}>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className={`px-2 ${isCompact ? "py-2 text-sm" : "py-1 text-xs"} rounded border ${
+              isDark
+                ? "bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600"
+                : "bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200"
+            } ${refreshing ? "opacity-50 cursor-not-allowed" : ""}`}
+            title={t("刷新", "Refresh")}
+          >
+            {refreshing ? <span className="animate-spin inline-block">⟳</span> : "↻"}
+          </button>
+          <label className={`flex items-center gap-1 px-2 ${isCompact ? "py-2 text-sm" : "py-1 text-xs"} rounded border cursor-pointer ${
             isDark
               ? "bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600"
               : "bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200"
-          } ${refreshing ? "opacity-50 cursor-not-allowed" : ""}`}
-          title={t("刷新", "Refresh")}
-        >
-          {refreshing ? <span className="animate-spin inline-block">⟳</span> : "↻"}
-        </button>
-        <label className={`flex items-center gap-1 px-2 py-1 text-xs rounded border cursor-pointer ${
-          isDark
-            ? "bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600"
-            : "bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200"
-        }`}>
-          <input
-            type="checkbox"
-            checked={compress}
-            onChange={(e) => setCompress(e.target.checked)}
-            className="w-3 h-3"
-          />
-          <span>{t("压缩上传", "Compressed upload")}</span>
-        </label>
+          }`}>
+            <input
+              type="checkbox"
+              checked={compress}
+              onChange={(e) => setCompress(e.target.checked)}
+              className="w-3 h-3"
+            />
+            <span>{t("压缩上传", "Compressed upload")}</span>
+          </label>
+        </div>
       </div>
 
       <div
-        className={`flex rounded border flex-1 min-h-0 ${isDark ? "border-slate-700" : "border-slate-200"} ${(uploading || downloading) ? "opacity-50" : ""} relative`}
+        className={`flex rounded border flex-1 min-h-0 ${isCompact ? "flex-col" : ""} ${isDark ? "border-slate-700" : "border-slate-200"} ${(uploading || downloading) ? "opacity-50" : ""} relative`}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -1251,7 +1259,7 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
           </div>
         )}
         {/* 左侧树形目录 */}
-        <div className={`w-1/3 overflow-auto border-r ${isDark ? "border-slate-700 bg-slate-800/50 dark-scrollbar" : "border-slate-200 bg-slate-50 light-scrollbar"}`}>
+        <div className={`${isCompact ? "w-full max-h-40 border-b" : "w-1/3 border-r"} overflow-auto ${isDark ? "border-slate-700 bg-slate-800/50 dark-scrollbar" : "border-slate-200 bg-slate-50 light-scrollbar"}`}>
           <div className="p-1">
             {tree.map(node => renderTreeNode(node))}
           </div>
@@ -1276,23 +1284,29 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
               {error}
             </div>
           ) : (
-            <table className="w-full text-xs">
+            <table className={`w-full ${rowTextClass}`}>
               <thead className={`sticky top-0 ${isDark ? "bg-slate-800" : "bg-slate-100"}`}>
                 <tr className={isDark ? "text-slate-400" : "text-slate-500"}>
-                  <th className="text-left py-1 px-2 font-medium">{t("名称", "Name")}</th>
-                  <th className="text-right py-1 px-2 font-medium relative" style={{ width: colWidths.size }}>
+                  <th className={`text-left ${rowPaddingClass} px-2 font-medium`}>{t("名称", "Name")}</th>
+                  <th className={`text-right ${rowPaddingClass} px-2 font-medium relative`} style={{ width: colWidths.size }}>
                     {t("大小", "Size")}
-                    <div className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-indigo-500" onMouseDown={() => setResizingCol("size")} />
+                    {!isCompact ? (
+                      <div className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-indigo-500" onMouseDown={() => setResizingCol("size")} />
+                    ) : null}
                   </th>
-                  <th className="text-left py-1 px-2 font-medium relative" style={{ width: colWidths.permissions }}>
-                    {t("权限", "Permissions")}
-                    <div className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-indigo-500" onMouseDown={() => setResizingCol("permissions")} />
-                  </th>
-                  <th className="text-left py-1 px-2 font-medium relative" style={{ width: colWidths.owner }}>
-                    {t("用户", "Owner")}
-                    <div className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-indigo-500" onMouseDown={() => setResizingCol("owner")} />
-                  </th>
-                  <th className="text-left py-1 px-2 font-medium" style={{ width: colWidths.modified }}>{t("修改时间", "Modified Time")}</th>
+                  {!isCompact ? (
+                    <>
+                      <th className={`text-left ${rowPaddingClass} px-2 font-medium relative`} style={{ width: colWidths.permissions }}>
+                        {t("权限", "Permissions")}
+                        <div className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-indigo-500" onMouseDown={() => setResizingCol("permissions")} />
+                      </th>
+                      <th className={`text-left ${rowPaddingClass} px-2 font-medium relative`} style={{ width: colWidths.owner }}>
+                        {t("用户", "Owner")}
+                        <div className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-indigo-500" onMouseDown={() => setResizingCol("owner")} />
+                      </th>
+                      <th className={`text-left ${rowPaddingClass} px-2 font-medium`} style={{ width: colWidths.modified }}>{t("修改时间", "Modified Time")}</th>
+                    </>
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
@@ -1303,14 +1317,18 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
                     onClick={handleParentItemClick}
                     onDoubleClick={handleNavigateToParent}
                   >
-                    <td className="py-1 px-2 truncate max-w-[120px]" title={t(`返回上一级: ${parentPath}`, `Go to parent: ${parentPath}`)}>
+                    <td className={`${rowPaddingClass} px-2 truncate max-w-[120px]`} title={t(`返回上一级: ${parentPath}`, `Go to parent: ${parentPath}`)}>
                       <span className="mr-1">📁</span>
                       ...
                     </td>
-                    <td className={`py-1 px-2 text-right ${isDark ? "text-slate-400" : "text-slate-500"}`}>-</td>
-                    <td className={`py-1 px-2 font-mono ${isDark ? "text-slate-400" : "text-slate-500"}`}>-</td>
-                    <td className={`py-1 px-2 truncate ${isDark ? "text-slate-400" : "text-slate-500"}`}>-</td>
-                    <td className={`py-1 px-2 ${isDark ? "text-slate-400" : "text-slate-500"}`}>{t("返回上一级", "Go to parent")}</td>
+                    <td className={`${rowPaddingClass} px-2 text-right ${isDark ? "text-slate-400" : "text-slate-500"}`}>-</td>
+                    {!isCompact ? (
+                      <>
+                        <td className={`${rowPaddingClass} px-2 font-mono ${isDark ? "text-slate-400" : "text-slate-500"}`}>-</td>
+                        <td className={`${rowPaddingClass} px-2 truncate ${isDark ? "text-slate-400" : "text-slate-500"}`}>-</td>
+                        <td className={`${rowPaddingClass} px-2 ${isDark ? "text-slate-400" : "text-slate-500"}`}>{t("返回上一级", "Go to parent")}</td>
+                      </>
+                    ) : null}
                   </tr>
                 )}
                 {files.map((file) => (
@@ -1327,27 +1345,31 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
                       handleContextMenu(e, file);
                     }}
                   >
-                    <td className="py-1 px-2 truncate max-w-[120px]" title={file.name}>
+                    <td className={`${rowPaddingClass} px-2 truncate max-w-[120px]`} title={file.name}>
                       <span className="mr-1">{file.is_dir ? "📁" : "📄"}</span>
                       {file.name}
                     </td>
-                    <td className={`py-1 px-2 text-right ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                    <td className={`${rowPaddingClass} px-2 text-right ${isDark ? "text-slate-400" : "text-slate-500"}`}>
                       {file.is_dir ? "-" : formatFileSize(file.size)}
                     </td>
-                    <td className={`py-1 px-2 font-mono ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-                      {file.permissions}
-                    </td>
-                    <td className={`py-1 px-2 truncate ${isDark ? "text-slate-400" : "text-slate-500"}`} title={`${file.owner}:${file.group}`}>
-                      {file.owner}
-                    </td>
-                    <td className={`py-1 px-2 ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-                      {file.modified}
-                    </td>
+                    {!isCompact ? (
+                      <>
+                        <td className={`${rowPaddingClass} px-2 font-mono ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                          {file.permissions}
+                        </td>
+                        <td className={`${rowPaddingClass} px-2 truncate ${isDark ? "text-slate-400" : "text-slate-500"}`} title={`${file.owner}:${file.group}`}>
+                          {file.owner}
+                        </td>
+                        <td className={`${rowPaddingClass} px-2 ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                          {file.modified}
+                        </td>
+                      </>
+                    ) : null}
                   </tr>
                 ))}
                 {files.length === 0 && !filesLoading && (
                   <tr>
-                    <td colSpan={5} className={`py-4 text-center ${isDark ? "text-slate-500" : "text-slate-400"}`}>
+                    <td colSpan={tableColSpan} className={`py-4 text-center ${isDark ? "text-slate-500" : "text-slate-400"}`}>
                       {t("空目录", "Empty directory")}
                     </td>
                   </tr>
@@ -1475,4 +1497,3 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
     </div>
   );
 }
-

@@ -65,12 +65,14 @@ type SystemMonitorProps = {
   isDark: boolean;
   selectedFilePath?: string;
   networkProfile?: NetworkProfile;
+  compact?: boolean;
 };
 
-export function SystemMonitor({ sessionId, isDark, selectedFilePath, networkProfile }: SystemMonitorProps) {
+export function SystemMonitor({ sessionId, isDark, selectedFilePath, networkProfile, compact }: SystemMonitorProps) {
   const { networkProfile: globalNetworkProfile, language } = useApp();
   const t = React.useCallback((zh: string, en: string) => localizeText(language, zh, en), [language]);
   const effectiveNetworkProfile = networkProfile ?? globalNetworkProfile;
+  const isCompact = compact === true;
   const [stats, setStats] = React.useState<SystemStats | null>(null);
   const [network, setNetwork] = React.useState<NetworkInfo | null>(null);
   const [processes, setProcesses] = React.useState<ProcessInfo[]>([]);
@@ -235,7 +237,7 @@ export function SystemMonitor({ sessionId, isDark, selectedFilePath, networkProf
   if (!stats) return null;
 
   return (
-    <div className="space-y-4">
+    <div className={isCompact ? "space-y-3" : "space-y-4"}>
       <div>
         <h3 className={`text-sm font-semibold mb-3 ${isDark ? "text-slate-200" : "text-slate-700"}`}>
           {t("系统状态", "System Status")}
@@ -385,7 +387,7 @@ export function SystemMonitor({ sessionId, isDark, selectedFilePath, networkProf
             <button
               onClick={handleSaveFile}
               disabled={fileContent === originalContent || fileTooLarge}
-              className={`px-2 py-1 text-xs rounded ${
+              className={`${isCompact ? "px-3 py-2 text-sm" : "px-2 py-1 text-xs"} rounded ${
                 fileContent === originalContent || fileTooLarge
                   ? "opacity-50 cursor-not-allowed"
                   : (isDark ? "bg-indigo-600 hover:bg-indigo-500" : "bg-indigo-500 hover:bg-indigo-400")
