@@ -15,10 +15,10 @@ One of its core capabilities is the persistent session design for long-running w
 
 A dedicated mobile layout provides touch-friendly interactions for terminal work, file management, and system monitoring in phone browsers.
 
-![Mobile Overview](./docs/images/mobile-overview.jpg)
-![Mobile Terminal](./docs/images/mobile-terminal.jpg)
-![Mobile File Management](./docs/images/mobile-fileManagement.jpg)
-![Mobile System Status](./docs/images/mobile-systemStatus.jpg)
+<img src="./docs/images/mobile-overview.jpg" alt="Mobile Overview" width="320" style="max-width: 100%;" />
+<img src="./docs/images/mobile-terminal.jpg" alt="Mobile Terminal" width="320" style="max-width: 100%;" />
+<img src="./docs/images/mobile-fileManagement.jpg" alt="Mobile File Management" width="320" style="max-width: 100%;" />
+<img src="./docs/images/mobile-systemStatus.jpg" alt="Mobile System Status" width="320" style="max-width: 100%;" />
 
 ## Community Edition Notice
 

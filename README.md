@@ -15,10 +15,10 @@ WebSSH Gateway 是一个面向运维和开发场景的浏览器 SSH 网关。你
 
 移动端提供专门的触摸友好布局与交互，支持在手机浏览器中完成终端操作、文件管理与系统监控。
 
-![移动端概览](./docs/images/mobile-overview.jpg)
-![移动端终端](./docs/images/mobile-terminal.jpg)
-![移动端文件管理](./docs/images/mobile-fileManagement.jpg)
-![移动端系统状态](./docs/images/mobile-systemStatus.jpg)
+<img src="./docs/images/mobile-overview.jpg" alt="移动端概览" width="320" style="max-width: 100%;" />
+<img src="./docs/images/mobile-terminal.jpg" alt="移动端终端" width="320" style="max-width: 100%;" />
+<img src="./docs/images/mobile-fileManagement.jpg" alt="移动端文件管理" width="320" style="max-width: 100%;" />
+<img src="./docs/images/mobile-systemStatus.jpg" alt="移动端系统状态" width="320" style="max-width: 100%;" />
 
 ## 社区版声明
 
