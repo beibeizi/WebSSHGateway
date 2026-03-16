@@ -27,6 +27,15 @@ export function TerminalMobile({ state, onBack }: TerminalMobileProps) {
     term.focus();
   }, [activeTab, syncTerminalSize, terminalInstance]);
 
+  const handleScroll = React.useCallback((direction: "up" | "down") => {
+    const term = terminalInstance.current;
+    if (!term) {
+      return;
+    }
+    const lines = direction === "up" ? -8 : 8;
+    term.scrollLines(lines);
+  }, [terminalInstance]);
+
   const actions = [
     {
       key: "language",
@@ -132,13 +141,39 @@ export function TerminalMobile({ state, onBack }: TerminalMobileProps) {
 
       <div className="flex-1 min-h-0 pb-16">
         <div className={`${activeTab === "terminal" ? "flex" : "hidden"} h-full flex-col`}>
-          <div className="flex-1 p-3 min-h-0">
+          <div className="flex-1 p-3 min-h-0 relative">
             <div
               ref={state.terminalRef}
               className={`h-full w-full rounded-lg border ${state.isDark ? "border-slate-800" : "border-slate-300 xterm-light"} ${state.sessionInfo?.enhanced_enabled ? "xterm-tmux-enhanced" : ""}`}
               tabIndex={-1}
               onClick={() => state.terminalInstance.current?.focus()}
             />
+            <div className="absolute right-4 bottom-4 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => handleScroll("up")}
+                className={`h-10 w-10 rounded-full border text-base ${
+                  state.isDark
+                    ? "border-slate-700 bg-slate-900/90 text-slate-200"
+                    : "border-slate-200 bg-white text-slate-700"
+                }`}
+                aria-label={state.t("向上滚动终端", "Scroll terminal up")}
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                onClick={() => handleScroll("down")}
+                className={`h-10 w-10 rounded-full border text-base ${
+                  state.isDark
+                    ? "border-slate-700 bg-slate-900/90 text-slate-200"
+                    : "border-slate-200 bg-white text-slate-700"
+                }`}
+                aria-label={state.t("向下滚动终端", "Scroll terminal down")}
+              >
+                ↓
+              </button>
+            </div>
           </div>
         </div>
 

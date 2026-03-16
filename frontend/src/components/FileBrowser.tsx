@@ -148,6 +148,7 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
   const [dialogInput, setDialogInput] = React.useState("");
   const [chmodRecursive, setChmodRecursive] = React.useState(false);
   const [chmodLoading, setChmodLoading] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const directoryCacheRef = React.useRef<Map<string, DirectoryCacheItem>>(new Map());
   const treeRef = React.useRef<TreeNode[]>(tree);
   const selectedPathRef = React.useRef<string>(selectedPath);
@@ -517,11 +518,11 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
     [mapBatchFailures, uploadBatchWithRetry, t]
   );
 
-  // 处理文件拖拽上传
-  const handleDrop = React.useCallback(async (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-
+  const handleUploadFiles = React.useCallback(async (allFiles: Array<{ file: File; path: string }>) => {
+    if (allFiles.length === 0) {
+      push(t("没有可上传的文件", "No files to upload"));
+      return;
+    }
     setUploading(true);
     setUploadProgress([]);
     setLastUploadFailures([]);
@@ -530,15 +531,6 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
     setUploadStats(INITIAL_UPLOAD_STATS);
 
     try {
-      // 读取所有文件（包括文件夹内容）
-      const dropSnapshot = snapshotDropPayload(e.dataTransfer);
-      const allFiles = await collectDroppedFiles(dropSnapshot);
-
-      if (allFiles.length === 0) {
-        push(t("没有可上传的文件", "No files to upload"));
-        return;
-      }
-
       const totalBytes = calculateTotalBytes(allFiles);
       setUploadStats({ current: 0, total: allFiles.length, uploadedBytes: 0, totalBytes });
 
@@ -638,6 +630,34 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
       setUploadStage("batch");
     }
   }, [sessionId, selectedPath, compress, push, loadDirectory, uploadFilesByBatch, t, language]);
+
+  // 处理文件拖拽上传
+  const handleDrop = React.useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+
+    try {
+      // 读取所有文件（包括文件夹内容）
+      const dropSnapshot = snapshotDropPayload(e.dataTransfer);
+      const allFiles = await collectDroppedFiles(dropSnapshot);
+      await handleUploadFiles(allFiles);
+    } catch (err) {
+      push(err instanceof Error ? err.message : t("上传失败", "Upload failed"));
+    }
+  }, [handleUploadFiles, push, t]);
+
+  const handleFileInputChange = React.useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const filesList = event.target.files;
+    if (!filesList || filesList.length === 0) {
+      return;
+    }
+    const allFiles = Array.from(filesList).map((file) => ({
+      file,
+      path: file.webkitRelativePath || file.name,
+    }));
+    await handleUploadFiles(allFiles);
+    event.target.value = "";
+  }, [handleUploadFiles]);
 
   const handleCancelUpload = React.useCallback(() => {
     uploadCancelledRef.current = true;
@@ -1160,6 +1180,14 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
           </button>
           <button
             type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className={`rounded-full px-3 py-2 ${uploading ? "opacity-50 cursor-not-allowed" : ""} ${isDark ? "bg-slate-800 text-slate-200" : "bg-white text-slate-700 border border-slate-200"}`}
+          >
+            {t("上传文件", "Upload")}
+          </button>
+          <button
+            type="button"
             onClick={() => handleActionForFiles("touch", [])}
             className={`rounded-full px-3 py-2 ${isDark ? "bg-slate-800 text-slate-200" : "bg-white text-slate-700 border border-slate-200"}`}
           >
@@ -1205,6 +1233,13 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
           >
             {t("取消选择", "Clear")}
           </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={handleFileInputChange}
+          />
         </div>
       ) : null}
 
