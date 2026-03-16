@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import AppConfig
 from app.core.db import Database
+from app.models.session import SessionRecord
 from app.models.user import User
 from app.services.auth import AuthService
 
@@ -92,6 +93,37 @@ def ensure_session_enhanced_columns(database: Database) -> None:
             connection.execute(text("ALTER TABLE sessions ADD COLUMN retry_cycle_count INTEGER DEFAULT 0"))
         if "allow_auto_retry" not in columns:
             connection.execute(text("ALTER TABLE sessions ADD COLUMN allow_auto_retry BOOLEAN DEFAULT 1"))
+
+
+def ensure_session_order_column(database: Database) -> None:
+    inspector = inspect(database._engine)
+    if "sessions" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("sessions")}
+    with database._engine.begin() as connection:
+        if "session_order" not in columns:
+            connection.execute(text("ALTER TABLE sessions ADD COLUMN session_order INTEGER"))
+
+    # 为历史数据补齐顺序（按 started_at 排序）
+    with database.session() as db_session:
+        records = db_session.execute(
+            select(SessionRecord).order_by(SessionRecord.user_id, SessionRecord.started_at)
+        ).scalars().all()
+        last_order_by_user: dict[int, int] = {}
+
+        for record in records:
+            if record.session_order and record.session_order > 0:
+                last_order_by_user[record.user_id] = max(
+                    last_order_by_user.get(record.user_id, 0),
+                    record.session_order,
+                )
+
+        for record in records:
+            if record.session_order and record.session_order > 0:
+                continue
+            next_order = last_order_by_user.get(record.user_id, 0) + 1
+            record.session_order = next_order
+            last_order_by_user[record.user_id] = next_order
 
 
 def is_user_locked(user: User, auth_service: AuthService) -> bool:

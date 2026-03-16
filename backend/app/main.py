@@ -21,6 +21,7 @@ from app.services.bootstrap import (
     ensure_connection_arch_columns,
     ensure_session_enhanced_columns,
     ensure_session_note_column,
+    ensure_session_order_column,
 )
 
 logger = get_logger(__name__)
@@ -44,6 +45,7 @@ def create_app() -> FastAPI:
     ensure_session_note_column(database)
     ensure_connection_arch_columns(database)
     ensure_session_enhanced_columns(database)
+    ensure_session_order_column(database)
 
     with database.session() as db_session:
         password = ensure_admin_user(db_session, auth_service)
@@ -158,7 +160,7 @@ def create_app() -> FastAPI:
                 if response.status_code != 404 or request.method != "GET":
                     return response
                 path = request.url.path
-                if path.startswith("/api") or path.startswith("/auth") or path.startswith("/sessions"):
+                if path.startswith("/api") or path.startswith("/auth") or path.startswith("/sessions") or path.startswith("/system"):
                     return response
                 return index_response
 

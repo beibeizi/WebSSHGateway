@@ -11,6 +11,15 @@ One of its core capabilities is the persistent session design for long-running w
 ![WebSSH Gateway Overview](./docs/images/preview-overview.png)
 ![WebSSH Gateway Terminal and File Manager](./docs/images/preview-terminal.png)
 
+## Mobile Experience
+
+A dedicated mobile layout provides touch-friendly interactions for terminal work, file management, and system monitoring in phone browsers.
+
+<img src="./docs/images/mobile-overview.jpg" alt="Mobile Overview" width="320" style="max-width: 100%;" />
+<img src="./docs/images/mobile-terminal.jpg" alt="Mobile Terminal" width="320" style="max-width: 100%;" />
+<img src="./docs/images/mobile-fileManagement.jpg" alt="Mobile File Management" width="320" style="max-width: 100%;" />
+<img src="./docs/images/mobile-systemStatus.jpg" alt="Mobile System Status" width="320" style="max-width: 100%;" />
+
 ## Community Edition Notice
 
 - This repository is the **Community Edition (CE)** of WebSSH Gateway.
@@ -24,6 +33,7 @@ One of its core capabilities is the persistent session design for long-running w
 - Connection asset management with encrypted credentials
 - Session lifecycle management with reconnect and notes
 - Enhanced persistent session design powered by `tmux`, with keepalive and auto-retry
+- Mobile-friendly experience for phone browsers with touch-first layouts and controls
 - System monitoring for CPU, memory, network, process, and disk
 - File management: browse, upload/download, rename, delete, chmod, batch upload
 - Security baseline: JWT auth, password policy, lockout policy, request-id logging

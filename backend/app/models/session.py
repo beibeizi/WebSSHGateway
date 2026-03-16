@@ -20,6 +20,7 @@ class SessionRecord(TimestampMixin, Base):
     last_activity: Mapped[datetime] = mapped_column(UTCDateTime())
     pty_info: Mapped[str] = mapped_column(Text)
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    session_order: Mapped[int] = mapped_column(Integer, default=0)
     enhanced_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     enhanced_fingerprint: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     tmux_binary_path: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)

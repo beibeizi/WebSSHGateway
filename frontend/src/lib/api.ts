@@ -22,6 +22,7 @@ const CLIENT_TEXT_MAP: Record<string, { zh: string; en: string }> = {
   "重试连接失败": { zh: "重试连接失败", en: "Failed to retry connection" },
   "断开失败": { zh: "断开失败", en: "Failed to disconnect" },
   "保存备注失败": { zh: "保存备注失败", en: "Failed to save note" },
+  "保存排序失败": { zh: "保存排序失败", en: "Failed to save order" },
   "删除会话失败": { zh: "删除会话失败", en: "Failed to delete session" },
   "删除连接失败": { zh: "删除连接失败", en: "Failed to delete connection" },
   "更新连接失败": { zh: "更新连接失败", en: "Failed to update connection" },
@@ -163,6 +164,7 @@ export type Session = {
   username: string;
   name: string;
   note?: string | null;
+  session_order?: number;
   enhanced_enabled?: boolean;
   remote_arch?: string | null;
   remote_os?: string | null;
@@ -411,6 +413,18 @@ export async function updateSessionNote(sessionId: string, note: string | null):
     throw new Error(detail);
   }
   return response.json();
+}
+
+export async function updateSessionOrder(orderedIds: string[]): Promise<void> {
+  const response = await fetch(`${HTTP_BASE}/sessions/order`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...getAuthHeader() },
+    body: JSON.stringify({ ordered_ids: orderedIds })
+  });
+  if (!response.ok) {
+    const detail = await safeError(response, "保存排序失败");
+    throw new Error(detail);
+  }
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {

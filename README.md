@@ -11,6 +11,15 @@ WebSSH Gateway 是一个面向运维和开发场景的浏览器 SSH 网关。你
 ![WebSSH Gateway 项目总览](./docs/images/preview-overview.png)
 ![WebSSH Gateway 终端与文件管理](./docs/images/preview-terminal.png)
 
+## 移动端适配
+
+移动端提供专门的触摸友好布局与交互，支持在手机浏览器中完成终端操作、文件管理与系统监控。
+
+<img src="./docs/images/mobile-overview.jpg" alt="移动端概览" width="320" style="max-width: 100%;" />
+<img src="./docs/images/mobile-terminal.jpg" alt="移动端终端" width="320" style="max-width: 100%;" />
+<img src="./docs/images/mobile-fileManagement.jpg" alt="移动端文件管理" width="320" style="max-width: 100%;" />
+<img src="./docs/images/mobile-systemStatus.jpg" alt="移动端系统状态" width="320" style="max-width: 100%;" />
+
 ## 社区版声明
 
 - 本仓库为 **WebSSH Gateway 社区版（Community Edition）**。
@@ -24,6 +33,7 @@ WebSSH Gateway 是一个面向运维和开发场景的浏览器 SSH 网关。你
 - 连接资产管理：支持保存主机连接信息，密码/私钥凭据加密存储。
 - 会话生命周期管理：会话状态跟踪、断开重连、会话备注。
 - 增强会话持久化：支持基于 `tmux` 的持久会话设计、增强保活与自动重试机制。
+- 移动端适配：面向手机浏览器的触摸友好操作与布局。
 - 系统监控面板：CPU、内存、网络、进程、磁盘等实时查看。
 - 文件管理能力：浏览、上传、下载、重命名、删除、权限修改、批量上传。
 - 基础安全能力：JWT 鉴权、密码复杂度校验、登录失败锁定、请求追踪 ID 日志。

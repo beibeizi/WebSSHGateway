@@ -94,6 +94,7 @@ class SessionResponse(BaseModel):
     username: str
     name: str
     note: Optional[str] = None
+    session_order: int = 0
     enhanced_enabled: bool = False
     remote_arch: Optional[str] = None
     remote_os: Optional[str] = None
@@ -117,6 +118,10 @@ class SessionStatusResponse(BaseModel):
 
 class SessionNoteUpdateRequest(BaseModel):
     note: Optional[str] = Field(default=None, max_length=1000)
+
+
+class SessionOrderUpdateRequest(BaseModel):
+    ordered_ids: list[str] = Field(default_factory=list)
 
 
 class TerminalMessage(BaseModel):

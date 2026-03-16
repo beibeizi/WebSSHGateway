@@ -1,5 +1,5 @@
 ﻿import React from "react";
-import { getSystemOverview, readFile, writeFile, SystemStats, NetworkInfo, ProcessInfo, DiskInfo } from "../lib/api";
+import { downloadFile, getSystemOverview, readFile, writeFile, SystemStats, NetworkInfo, ProcessInfo, DiskInfo } from "../lib/api";
 import { useApp } from "../context/AppContext";
 import type { NetworkProfile } from "../context/AppContext";
 import { useToast } from "./Toast";
@@ -25,6 +25,16 @@ function formatSpeed(bytesPerSec: number): string {
   const sizes = ["B/s", "KB/s", "MB/s", "GB/s"];
   const i = Math.floor(Math.log(bytesPerSec) / Math.log(k));
   return parseFloat((bytesPerSec / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}
+
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "tif", "tiff"]);
+
+function isImagePath(path: string): boolean {
+  const normalized = path.split("?")[0].split("#")[0];
+  const lastDot = normalized.lastIndexOf(".");
+  if (lastDot === -1) return false;
+  const ext = normalized.slice(lastDot + 1).toLowerCase();
+  return IMAGE_EXTENSIONS.has(ext);
 }
 
 type ProgressBarProps = {
@@ -65,18 +75,28 @@ type SystemMonitorProps = {
   isDark: boolean;
   selectedFilePath?: string;
   networkProfile?: NetworkProfile;
+  compact?: boolean;
 };
 
-export function SystemMonitor({ sessionId, isDark, selectedFilePath, networkProfile }: SystemMonitorProps) {
+export function SystemMonitor({ sessionId, isDark, selectedFilePath, networkProfile, compact }: SystemMonitorProps) {
   const { networkProfile: globalNetworkProfile, language } = useApp();
   const t = React.useCallback((zh: string, en: string) => localizeText(language, zh, en), [language]);
   const effectiveNetworkProfile = networkProfile ?? globalNetworkProfile;
+  const isCompact = compact === true;
+  const [collapsedSections, setCollapsedSections] = React.useState({
+    status: false,
+    processes: isCompact,
+    disks: isCompact,
+    file: false,
+  });
   const [stats, setStats] = React.useState<SystemStats | null>(null);
   const [network, setNetwork] = React.useState<NetworkInfo | null>(null);
   const [processes, setProcesses] = React.useState<ProcessInfo[]>([]);
   const [disks, setDisks] = React.useState<DiskInfo[]>([]);
   const [fileContent, setFileContent] = React.useState<string>("");
   const [originalContent, setOriginalContent] = React.useState<string>("");
+  const [imageUrl, setImageUrl] = React.useState<string | null>(null);
+  const [imageError, setImageError] = React.useState<string | null>(null);
   const [fileLoading, setFileLoading] = React.useState(false);
   const [fileTooLarge, setFileTooLarge] = React.useState(false);
   const [fileSize, setFileSize] = React.useState(0);
@@ -108,14 +128,82 @@ export function SystemMonitor({ sessionId, isDark, selectedFilePath, networkProf
     }
   }, [sessionId, t]);
 
-  // 读取文件内容
+  const isImageFile = React.useMemo(() => {
+    return selectedFilePath ? isImagePath(selectedFilePath) : false;
+  }, [selectedFilePath]);
+
+  const revokeImageUrl = React.useCallback((url: string | null) => {
+    if (url) {
+      URL.revokeObjectURL(url);
+    }
+  }, []);
+
+  // 读取文件内容或加载图片
   React.useEffect(() => {
+    let cancelled = false;
+
     if (!selectedFilePath) {
       setFileContent("");
       setOriginalContent("");
       setFileTooLarge(false);
-      return;
+      setImageError(null);
+      setFileSize(0);
+      setImageUrl((prev) => {
+        revokeImageUrl(prev);
+        return null;
+      });
+      return () => {
+        cancelled = true;
+      };
     }
+
+    if (isImageFile) {
+      setFileLoading(true);
+      setFileTooLarge(false);
+      setFileContent("");
+      setOriginalContent("");
+      setImageError(null);
+
+      const loadImage = async () => {
+        try {
+          const blob = await downloadFile(sessionId, selectedFilePath);
+          if (cancelled) {
+            return;
+          }
+          const url = URL.createObjectURL(blob);
+          setImageUrl((prev) => {
+            revokeImageUrl(prev);
+            return url;
+          });
+          setFileSize(blob.size);
+        } catch (err) {
+          if (cancelled) {
+            return;
+          }
+          setImageError(err instanceof Error ? err.message : t("图片加载失败", "Failed to load image"));
+          setImageUrl((prev) => {
+            revokeImageUrl(prev);
+            return null;
+          });
+        } finally {
+          if (!cancelled) {
+            setFileLoading(false);
+          }
+        }
+      };
+
+      loadImage();
+
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setImageError(null);
+    setImageUrl((prev) => {
+      revokeImageUrl(prev);
+      return null;
+    });
 
     const loadFile = async (force = false) => {
       setFileLoading(true);
@@ -136,15 +224,28 @@ export function SystemMonitor({ sessionId, isDark, selectedFilePath, networkProf
         setFileContent("");
         setOriginalContent("");
       } finally {
-        setFileLoading(false);
+        if (!cancelled) {
+          setFileLoading(false);
+        }
       }
     };
 
     loadFile();
-  }, [sessionId, selectedFilePath, push, t]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, selectedFilePath, isImageFile, push, t, revokeImageUrl, downloadFile]);
+
+  React.useEffect(() => {
+    return () => {
+      revokeImageUrl(imageUrl);
+    };
+  }, [imageUrl, revokeImageUrl]);
 
   const handleLoadLargeFile = React.useCallback(async () => {
     if (!selectedFilePath) return;
+    if (isImageFile) return;
     setFileLoading(true);
     try {
       const result = await readFile(sessionId, selectedFilePath, true);
@@ -156,7 +257,7 @@ export function SystemMonitor({ sessionId, isDark, selectedFilePath, networkProf
     } finally {
       setFileLoading(false);
     }
-  }, [sessionId, selectedFilePath, push, t]);
+  }, [sessionId, selectedFilePath, push, t, isImageFile]);
 
   // 保存文件
   const handleSaveFile = React.useCallback(async () => {
@@ -208,8 +309,37 @@ export function SystemMonitor({ sessionId, isDark, selectedFilePath, networkProf
       const bVal = sortField === "cpu" ? b.cpu_percent : b.memory_percent;
       return sortOrder === "desc" ? bVal - aVal : aVal - bVal;
     });
-    return sorted.slice(0, 5);
-  }, [processes, sortField, sortOrder]);
+    const maxCount = isCompact ? 3 : 5;
+    return sorted.slice(0, maxCount);
+  }, [processes, sortField, sortOrder, isCompact]);
+
+  const toggleSection = React.useCallback((key: keyof typeof collapsedSections) => {
+    setCollapsedSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
+  const renderSectionHeader = (key: keyof typeof collapsedSections, title: string) => {
+    if (!isCompact) {
+      return (
+        <h3 className={`text-sm font-semibold mb-3 ${isDark ? "text-slate-200" : "text-slate-700"}`}>
+          {title}
+        </h3>
+      );
+    }
+    return (
+      <button
+        type="button"
+        onClick={() => toggleSection(key)}
+        className={`w-full flex items-center justify-between text-sm font-semibold mb-2 ${
+          isDark ? "text-slate-200" : "text-slate-700"
+        }`}
+      >
+        <span>{title}</span>
+        <span className={`text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+          {collapsedSections[key] ? t("展开", "Expand") : t("收起", "Collapse")}
+        </span>
+      </button>
+    );
+  };
 
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field) return <span className="opacity-30">↕</span>;
@@ -235,191 +365,240 @@ export function SystemMonitor({ sessionId, isDark, selectedFilePath, networkProf
   if (!stats) return null;
 
   return (
-    <div className="space-y-4">
+    <div className={isCompact ? "space-y-3" : "space-y-4"}>
       <div>
-        <h3 className={`text-sm font-semibold mb-3 ${isDark ? "text-slate-200" : "text-slate-700"}`}>
-          {t("系统状态", "System Status")}
-        </h3>
+        {renderSectionHeader("status", t("系统状态", "System Status"))}
 
-        {/* CPU */}
-        <div className="mb-3">
-          <div className="flex justify-between items-center mb-1">
-            <span className={`text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-              {t(`CPU (${stats.cpu.count} 核)`, `CPU (${stats.cpu.count} Cores)`)}
-            </span>
-            <span className={`text-xs font-medium ${isDark ? "text-slate-300" : "text-slate-600"}`}>
-              {stats.cpu.percent.toFixed(1)}%
-            </span>
-          </div>
-          <ProgressBar percent={stats.cpu.percent} isDark={isDark} color="blue" />
-        </div>
-
-        {/* 内存 */}
-        <div className="mb-3">
-          <div className="flex justify-between items-center mb-1">
-            <span className={`text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-              {t("内存", "Memory")}
-            </span>
-            <span className={`text-xs font-medium ${isDark ? "text-slate-300" : "text-slate-600"}`}>
-              {stats.memory.percent.toFixed(1)}% ({formatBytes(stats.memory.used)} / {formatBytes(stats.memory.total)})
-            </span>
-          </div>
-          <ProgressBar percent={stats.memory.percent} isDark={isDark} color="green" />
-        </div>
-
-        {/* 交换区 */}
-        <div className="mb-3">
-          <div className="flex justify-between items-center mb-1">
-            <span className={`text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-              {t("交换区", "Swap")}
-            </span>
-            <span className={`text-xs font-medium ${isDark ? "text-slate-300" : "text-slate-600"}`}>
-              {stats.swap.total > 0
-                ? `${stats.swap.percent.toFixed(1)}% (${formatBytes(stats.swap.used)} / ${formatBytes(stats.swap.total)})`
-                : t("未启用", "Disabled")
-              }
-            </span>
-          </div>
-          {stats.swap.total > 0 && (
-            <ProgressBar percent={stats.swap.percent} isDark={isDark} color="yellow" />
-          )}
-        </div>
-
-        {/* 网络速度 */}
-        <div className={`pt-3 mt-3 ${isDark ? "border-t border-slate-700" : "border-t border-slate-200"}`}>
-          <div className="flex justify-between items-center">
-            <span className={`text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-              {t("网络", "Network")}
-            </span>
-            <div className="flex items-center gap-3">
-              <span className={`text-xs font-medium ${isDark ? "text-purple-400" : "text-purple-600"}`}>
-                ↑ {network ? formatSpeed(network.upload_speed) : "-"}
-              </span>
-              <span className={`text-xs font-medium ${isDark ? "text-cyan-400" : "text-cyan-600"}`}>
-                ↓ {network ? formatSpeed(network.download_speed) : "-"}
-              </span>
+        {!isCompact || !collapsedSections.status ? (
+          <>
+            {/* CPU */}
+            <div className="mb-3">
+              <div className="flex justify-between items-center mb-1">
+                <span className={`text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                  {t(`CPU (${stats.cpu.count} 核)`, `CPU (${stats.cpu.count} Cores)`)}
+                </span>
+                <span className={`text-xs font-medium ${isDark ? "text-slate-300" : "text-slate-600"}`}>
+                  {stats.cpu.percent.toFixed(1)}%
+                </span>
+              </div>
+              <ProgressBar percent={stats.cpu.percent} isDark={isDark} color="blue" />
             </div>
-          </div>
-        </div>
+
+            {/* 内存 */}
+            <div className="mb-3">
+              <div className="flex justify-between items-center mb-1">
+                <span className={`text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                  {t("内存", "Memory")}
+                </span>
+                <span className={`text-xs font-medium ${isDark ? "text-slate-300" : "text-slate-600"}`}>
+                  {stats.memory.percent.toFixed(1)}% ({formatBytes(stats.memory.used)} / {formatBytes(stats.memory.total)})
+                </span>
+              </div>
+              <ProgressBar percent={stats.memory.percent} isDark={isDark} color="green" />
+            </div>
+
+            {/* 交换区 */}
+            <div className="mb-3">
+              <div className="flex justify-between items-center mb-1">
+                <span className={`text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                  {t("交换区", "Swap")}
+                </span>
+                <span className={`text-xs font-medium ${isDark ? "text-slate-300" : "text-slate-600"}`}>
+                  {stats.swap.total > 0
+                    ? `${stats.swap.percent.toFixed(1)}% (${formatBytes(stats.swap.used)} / ${formatBytes(stats.swap.total)})`
+                    : t("未启用", "Disabled")
+                  }
+                </span>
+              </div>
+              {stats.swap.total > 0 && (
+                <ProgressBar percent={stats.swap.percent} isDark={isDark} color="yellow" />
+              )}
+            </div>
+
+            {/* 网络速度 */}
+            <div className={`pt-3 mt-3 ${isDark ? "border-t border-slate-700" : "border-t border-slate-200"}`}>
+              <div className="flex justify-between items-center">
+                <span className={`text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                  {t("网络", "Network")}
+                </span>
+                <div className="flex items-center gap-3">
+                  <span className={`text-xs font-medium ${isDark ? "text-purple-400" : "text-purple-600"}`}>
+                    ↑ {network ? formatSpeed(network.upload_speed) : "-"}
+                  </span>
+                  <span className={`text-xs font-medium ${isDark ? "text-cyan-400" : "text-cyan-600"}`}>
+                    ↓ {network ? formatSpeed(network.download_speed) : "-"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : null}
       </div>
 
       {/* 进程列表 */}
       <div className={`pt-4 ${isDark ? "border-t border-slate-700" : "border-t border-slate-200"}`}>
-        <h3 className={`text-sm font-semibold mb-3 ${isDark ? "text-slate-200" : "text-slate-700"}`}>
-          {t("进程 TOP 5", "Top 5 Processes")}
-        </h3>
+        {renderSectionHeader("processes", t("进程 TOP 5", "Top 5 Processes"))}
 
-        {/* 表头 */}
-        <div className={`flex text-xs mb-2 ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-          <div className="flex-1">{t("进程名", "Process")}</div>
-          <div
-            className="w-16 text-right cursor-pointer hover:text-indigo-400 select-none"
-            onClick={() => handleSort("cpu")}
-          >
-            CPU <SortIcon field="cpu" />
-          </div>
-          <div
-            className="w-20 text-right cursor-pointer hover:text-indigo-400 select-none"
-            onClick={() => handleSort("memory")}
-          >
-            {t("内存", "Memory")} <SortIcon field="memory" />
-          </div>
-        </div>
-
-        {/* 进程表 */}
-        <div className="space-y-1">
-          {sortedProcesses.map((proc) => (
-            <div
-              key={proc.pid}
-              className={`flex text-xs py-1 rounded px-1 ${isDark ? "hover:bg-slate-800" : "hover:bg-slate-100"} group relative`}
-              title={proc.command}
-            >
-              <div className={`flex-1 truncate ${isDark ? "text-slate-300" : "text-slate-600"}`}>
-                {proc.name}
+        {!isCompact || !collapsedSections.processes ? (
+          <>
+            {/* 表头 */}
+            <div className={`flex text-xs mb-2 ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+              <div className="flex-1">{t("进程名", "Process")}</div>
+              <div
+                className="w-16 text-right cursor-pointer hover:text-indigo-400 select-none"
+                onClick={() => handleSort("cpu")}
+              >
+                CPU <SortIcon field="cpu" />
               </div>
-              <div className={`w-16 text-right ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-                {proc.cpu_percent.toFixed(1)}%
-              </div>
-              <div className={`w-20 text-right ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-                {formatBytes(proc.memory_bytes)}
+              <div
+                className="w-20 text-right cursor-pointer hover:text-indigo-400 select-none"
+                onClick={() => handleSort("memory")}
+              >
+                {t("内存", "Memory")} <SortIcon field="memory" />
               </div>
             </div>
-          ))}
-          {sortedProcesses.length === 0 && (
-            <div className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>
-              {t("暂无数据", "No data")}
+
+            {/* 进程表 */}
+            <div className="space-y-1">
+              {sortedProcesses.map((proc) => (
+                <div
+                  key={proc.pid}
+                  className={`flex text-xs py-1 rounded px-1 ${isDark ? "hover:bg-slate-800" : "hover:bg-slate-100"} group relative`}
+                  title={proc.command}
+                >
+                  <div className={`flex-1 truncate ${isDark ? "text-slate-300" : "text-slate-600"}`}>
+                    {proc.name}
+                  </div>
+                  <div className={`w-16 text-right ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                    {proc.cpu_percent.toFixed(1)}%
+                  </div>
+                  <div className={`w-20 text-right ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                    {formatBytes(proc.memory_bytes)}
+                  </div>
+                </div>
+              ))}
+              {sortedProcesses.length === 0 && (
+                <div className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>
+                  {t("暂无数据", "No data")}
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </>
+        ) : null}
       </div>
 
       {/* 磁盘信息 */}
       <div className={`pt-4 ${isDark ? "border-t border-slate-700" : "border-t border-slate-200"}`}>
-        <h3 className={`text-sm font-semibold mb-3 ${isDark ? "text-slate-200" : "text-slate-700"}`}>
-          {t("磁盘挂载", "Disk Mounts")}
-        </h3>
-        <div className="space-y-2">
-          {disks.map((disk) => (
-            <div key={disk.mount}>
-              <div className="flex justify-between items-center mb-1">
-                <span className={`text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-                  {disk.mount}
-                </span>
-                <span className={`text-xs font-medium ${isDark ? "text-slate-300" : "text-slate-600"}`}>
-                  {disk.percent.toFixed(1)}% ({formatBytes(disk.used)} / {formatBytes(disk.total)})
-                </span>
+        {renderSectionHeader("disks", t("磁盘挂载", "Disk Mounts"))}
+        {!isCompact || !collapsedSections.disks ? (
+          <div className="space-y-2">
+            {disks.map((disk) => (
+              <div key={disk.mount}>
+                <div className="flex justify-between items-center mb-1">
+                  <span className={`text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                    {disk.mount}
+                  </span>
+                  <span className={`text-xs font-medium ${isDark ? "text-slate-300" : "text-slate-600"}`}>
+                    {disk.percent.toFixed(1)}% ({formatBytes(disk.used)} / {formatBytes(disk.total)})
+                  </span>
+                </div>
+                <ProgressBar percent={disk.percent} isDark={isDark} color="cyan" />
               </div>
-              <ProgressBar percent={disk.percent} isDark={isDark} color="cyan" />
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {/* 文件预览 */}
       {selectedFilePath && (
         <div className={`pt-4 ${isDark ? "border-t border-slate-700" : "border-t border-slate-200"}`}>
-          <div className="flex justify-between items-center mb-2">
-            <h3 className={`text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-700"}`}>
-              {t("文件预览", "File Preview")}
-            </h3>
-            <button
-              onClick={handleSaveFile}
-              disabled={fileContent === originalContent || fileTooLarge}
-              className={`px-2 py-1 text-xs rounded ${
-                fileContent === originalContent || fileTooLarge
-                  ? "opacity-50 cursor-not-allowed"
-                  : (isDark ? "bg-indigo-600 hover:bg-indigo-500" : "bg-indigo-500 hover:bg-indigo-400")
-              } text-white`}
-            >
-              {t("保存", "Save")}
-            </button>
-          </div>
-          {fileLoading ? (
-            <div className={`flex items-center justify-center text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`} style={{ height: "172px" }}>
-              <span className="animate-spin mr-2">⟳</span> {t("加载中...", "Loading...")}
-            </div>
-          ) : fileTooLarge ? (
-            <div className={`flex flex-col items-center justify-center text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`} style={{ height: "172px" }}>
-              <p className="mb-2">{t(`文件过大 (${(fileSize / 1024 / 1024).toFixed(2)} MB)`, `File too large (${(fileSize / 1024 / 1024).toFixed(2)} MB)`)}</p>
-              <button
-                onClick={handleLoadLargeFile}
-                className={`px-3 py-1 rounded ${isDark ? "bg-indigo-600 hover:bg-indigo-500" : "bg-indigo-500 hover:bg-indigo-400"} text-white`}
-              >
-                {t("仍然加载", "Load anyway")}
-              </button>
-            </div>
+          {isCompact ? (
+            renderSectionHeader("file", isImageFile ? t("图片预览", "Image Preview") : t("文件预览", "File Preview"))
           ) : (
-            <textarea
-              value={fileContent}
-              onChange={(e) => setFileContent(e.target.value)}
-              className={`w-full text-xs font-mono p-2 rounded border ${
-                isDark
-                  ? "bg-slate-900 border-slate-700 text-slate-200"
-                  : "bg-white border-slate-300 text-slate-700"
-              }`}
-              style={{ height: "172px" }}
-            />
+            <div className="flex justify-between items-center mb-2">
+              <h3 className={`text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-700"}`}>
+                {isImageFile ? t("图片预览", "Image Preview") : t("文件预览", "File Preview")}
+              </h3>
+              {!isImageFile ? (
+                <button
+                  onClick={handleSaveFile}
+                  disabled={fileContent === originalContent || fileTooLarge}
+                  className={`px-2 py-1 text-xs rounded ${
+                    fileContent === originalContent || fileTooLarge
+                      ? "opacity-50 cursor-not-allowed"
+                      : (isDark ? "bg-indigo-600 hover:bg-indigo-500" : "bg-indigo-500 hover:bg-indigo-400")
+                  } text-white`}
+                >
+                  {t("保存", "Save")}
+                </button>
+              ) : null}
+            </div>
           )}
+          {!isCompact || !collapsedSections.file ? (
+            <>
+              {isCompact ? (
+                <div className="flex justify-end mb-2">
+                  {!isImageFile ? (
+                    <button
+                      onClick={handleSaveFile}
+                      disabled={fileContent === originalContent || fileTooLarge}
+                      className={`px-3 py-2 text-sm rounded ${
+                        fileContent === originalContent || fileTooLarge
+                          ? "opacity-50 cursor-not-allowed"
+                          : (isDark ? "bg-indigo-600 hover:bg-indigo-500" : "bg-indigo-500 hover:bg-indigo-400")
+                      } text-white`}
+                    >
+                      {t("保存", "Save")}
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+              {fileLoading ? (
+                <div className={`flex items-center justify-center text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`} style={{ height: "172px" }}>
+                  <span className="animate-spin mr-2">⟳</span> {t("加载中...", "Loading...")}
+                </div>
+              ) : isImageFile ? (
+                imageError ? (
+                  <div className={`flex items-center justify-center text-xs ${isDark ? "text-rose-400" : "text-rose-500"}`} style={{ height: "172px" }}>
+                    {imageError}
+                  </div>
+                ) : imageUrl ? (
+                  <div className={`flex items-center justify-center rounded border ${isDark ? "border-slate-700 bg-slate-900/40" : "border-slate-200 bg-slate-50"}`} style={{ height: "172px" }}>
+                    <img
+                      src={imageUrl}
+                      alt={selectedFilePath}
+                      className="max-h-full max-w-full object-contain"
+                    />
+                  </div>
+                ) : (
+                  <div className={`flex items-center justify-center text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`} style={{ height: "172px" }}>
+                    {t("暂无图片内容", "No image preview")}
+                  </div>
+                )
+              ) : fileTooLarge ? (
+                <div className={`flex flex-col items-center justify-center text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`} style={{ height: "172px" }}>
+                  <p className="mb-2">{t(`文件过大 (${(fileSize / 1024 / 1024).toFixed(2)} MB)`, `File too large (${(fileSize / 1024 / 1024).toFixed(2)} MB)`)}</p>
+                  <button
+                    onClick={handleLoadLargeFile}
+                    className={`px-3 py-1 rounded ${isDark ? "bg-indigo-600 hover:bg-indigo-500" : "bg-indigo-500 hover:bg-indigo-400"} text-white`}
+                  >
+                    {t("仍然加载", "Load anyway")}
+                  </button>
+                </div>
+              ) : (
+                <textarea
+                  value={fileContent}
+                  onChange={(e) => setFileContent(e.target.value)}
+                  className={`w-full text-xs font-mono p-2 rounded border ${
+                    isDark
+                      ? "bg-slate-900 border-slate-700 text-slate-200"
+                      : "bg-white border-slate-300 text-slate-700"
+                  }`}
+                  style={{ height: "172px" }}
+                />
+              )}
+            </>
+          ) : null}
         </div>
       )}
     </div>

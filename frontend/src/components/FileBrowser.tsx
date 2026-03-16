@@ -59,6 +59,7 @@ type FileBrowserProps = {
   currentDir?: string;
   onFileSelect?: (path: string | null) => void;
   networkProfile?: NetworkProfile;
+  compact?: boolean;
 };
 
 type UploadStats = {
@@ -106,10 +107,11 @@ function createRootTree(): TreeNode[] {
   return [{ name: "/", path: "/", expanded: true, loaded: false }];
 }
 
-export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, networkProfile }: FileBrowserProps) {
+export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, networkProfile, compact }: FileBrowserProps) {
   const { networkProfile: globalNetworkProfile, language } = useApp();
   const t = React.useCallback((zh: string, en: string) => localizeText(language, zh, en), [language]);
   const effectiveNetworkProfile = networkProfile ?? globalNetworkProfile;
+  const isCompact = compact === true;
   const directoryCacheTtlMs =
     effectiveNetworkProfile === "poor" ? 12000 : effectiveNetworkProfile === "degraded" ? 6000 : 3000;
   const currentDirDebounceMs =
@@ -146,6 +148,7 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
   const [dialogInput, setDialogInput] = React.useState("");
   const [chmodRecursive, setChmodRecursive] = React.useState(false);
   const [chmodLoading, setChmodLoading] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const directoryCacheRef = React.useRef<Map<string, DirectoryCacheItem>>(new Map());
   const treeRef = React.useRef<TreeNode[]>(tree);
   const selectedPathRef = React.useRef<string>(selectedPath);
@@ -515,11 +518,11 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
     [mapBatchFailures, uploadBatchWithRetry, t]
   );
 
-  // 处理文件拖拽上传
-  const handleDrop = React.useCallback(async (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-
+  const handleUploadFiles = React.useCallback(async (allFiles: Array<{ file: File; path: string }>) => {
+    if (allFiles.length === 0) {
+      push(t("没有可上传的文件", "No files to upload"));
+      return;
+    }
     setUploading(true);
     setUploadProgress([]);
     setLastUploadFailures([]);
@@ -528,15 +531,6 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
     setUploadStats(INITIAL_UPLOAD_STATS);
 
     try {
-      // 读取所有文件（包括文件夹内容）
-      const dropSnapshot = snapshotDropPayload(e.dataTransfer);
-      const allFiles = await collectDroppedFiles(dropSnapshot);
-
-      if (allFiles.length === 0) {
-        push(t("没有可上传的文件", "No files to upload"));
-        return;
-      }
-
       const totalBytes = calculateTotalBytes(allFiles);
       setUploadStats({ current: 0, total: allFiles.length, uploadedBytes: 0, totalBytes });
 
@@ -636,6 +630,34 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
       setUploadStage("batch");
     }
   }, [sessionId, selectedPath, compress, push, loadDirectory, uploadFilesByBatch, t, language]);
+
+  // 处理文件拖拽上传
+  const handleDrop = React.useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+
+    try {
+      // 读取所有文件（包括文件夹内容）
+      const dropSnapshot = snapshotDropPayload(e.dataTransfer);
+      const allFiles = await collectDroppedFiles(dropSnapshot);
+      await handleUploadFiles(allFiles);
+    } catch (err) {
+      push(err instanceof Error ? err.message : t("上传失败", "Upload failed"));
+    }
+  }, [handleUploadFiles, push, t]);
+
+  const handleFileInputChange = React.useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const filesList = event.target.files;
+    if (!filesList || filesList.length === 0) {
+      return;
+    }
+    const allFiles = Array.from(filesList).map((file) => ({
+      file,
+      path: file.webkitRelativePath || file.name,
+    }));
+    await handleUploadFiles(allFiles);
+    event.target.value = "";
+  }, [handleUploadFiles]);
 
   const handleCancelUpload = React.useCallback(() => {
     uploadCancelledRef.current = true;
@@ -776,45 +798,51 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
     }
   }, [sessionId, push, t]);
 
-  const handleContextDownload = React.useCallback(async () => {
-    if (!contextMenu) return;
-    setContextMenu(null);
+  const getSelectedFiles = React.useCallback(() => {
+    if (selectedFiles.size === 0) {
+      return [];
+    }
+    return Array.from(selectedFiles)
+      .map(path => files.find(f => f.path === path))
+      .filter(Boolean) as FileInfo[];
+  }, [files, selectedFiles]);
 
-    const filesToDownload =
-      selectedFiles.size > 0
-        ? (Array.from(selectedFiles).map(path => files.find(f => f.path === path)).filter(Boolean) as FileInfo[])
-        : contextMenu.files;
-    if (filesToDownload.length === 0) return;
-    await downloadItemsWithProgress(filesToDownload);
-  }, [contextMenu, selectedFiles, files, downloadItemsWithProgress]);
+  const handleActionForFiles = React.useCallback((
+    action: "mkdir" | "touch" | "rename" | "chmod" | "delete" | "download",
+    filesForAction: FileInfo[]
+  ) => {
+    if (action === "delete") {
+      if (filesForAction.length === 0) return;
+      if (confirm(t(`确定删除 ${filesForAction.length} 个项目？`, `Delete ${filesForAction.length} item(s)?`))) {
+        Promise.all(filesForAction.map(file => deletePath(sessionId, file.path))).then(() => {
+          push(t("删除成功", "Deleted successfully"));
+          setSelectedFiles(new Set());
+          loadDirectory(selectedPathRef.current, false, { forceRefresh: true, preferCache: false });
+        }).catch(() => push(t("删除失败", "Delete failed")));
+      }
+      return;
+    }
+    if (action === "download") {
+      if (filesForAction.length === 0) return;
+      void downloadItemsWithProgress(filesForAction);
+      return;
+    }
+
+    setDialog({ type: action, files: filesForAction });
+    if (action === "rename") {
+      setDialogInput(filesForAction[0]?.name || "");
+    } else if (action === "chmod") {
+      setDialogInput(permissionsToOctal(filesForAction[0]?.permissions || ""));
+    } else {
+      setDialogInput("");
+    }
+  }, [sessionId, push, t, downloadItemsWithProgress, loadDirectory]);
 
   const handleContextAction = React.useCallback((action: "mkdir" | "touch" | "rename" | "chmod" | "delete" | "download") => {
     if (!contextMenu) return;
-    const { files } = contextMenu;
     setContextMenu(null);
-
-    if (action === "delete") {
-      if (files.length === 0) return;
-      if (confirm(t(`确定删除 ${files.length} 个项目？`, `Delete ${files.length} item(s)?`))) {
-        Promise.all(files.map(file => deletePath(sessionId, file.path))).then(() => {
-          push(t("删除成功", "Deleted successfully"));
-          setSelectedFiles(new Set());
-          loadDirectory(selectedPath, false, { forceRefresh: true, preferCache: false });
-        }).catch(() => push(t("删除失败", "Delete failed")));
-      }
-    } else if (action === "download") {
-      handleContextDownload();
-    } else {
-      setDialog({ type: action, files });
-      if (action === "rename") {
-        setDialogInput(files[0]?.name || "");
-      } else if (action === "chmod") {
-        setDialogInput(permissionsToOctal(files[0]?.permissions || ""));
-      } else {
-        setDialogInput("");
-      }
-    }
-  }, [contextMenu, sessionId, push, loadDirectory, selectedPath, t]);
+    handleActionForFiles(action, contextMenu.files);
+  }, [contextMenu, handleActionForFiles]);
 
   const handleDialogSubmit = React.useCallback(async () => {
     if (!dialog || !dialogInput.trim()) return;
@@ -982,6 +1010,12 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
     onFileSelect?.(null);
   }, [onFileSelect]);
 
+  const handleClearSelection = React.useCallback(() => {
+    setSelectedFile(null);
+    setSelectedFiles(new Set());
+    onFileSelect?.(null);
+  }, [onFileSelect]);
+
   const loadDirectoryRef = React.useRef(loadDirectory);
   const toggleNodeRef = React.useRef(toggleNode);
 
@@ -1018,7 +1052,7 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
     return (
       <div key={node.path}>
         <div
-          className={`flex items-center gap-1 py-0.5 px-1 rounded cursor-pointer text-xs truncate ${
+          className={`flex items-center gap-1 ${isCompact ? "py-1 text-sm" : "py-0.5 text-xs"} px-1 rounded cursor-pointer truncate ${
             isSelected
               ? (isDark ? "bg-indigo-600/50 text-white" : "bg-indigo-100 text-indigo-700")
               : (isDark ? "hover:bg-slate-700 text-slate-300" : "hover:bg-slate-100 text-slate-600")
@@ -1072,9 +1106,17 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
     downloadStats && downloadStats.totalBytes > 0
       ? calculatePercent(downloadStats.loadedBytes, downloadStats.totalBytes)
       : null;
+  const selectedItems = getSelectedFiles();
+  const selectedCount = selectedItems.length;
+  const canRename = selectedCount === 1;
+  const hasSelection = selectedCount > 0;
+
+  const rowPaddingClass = isCompact ? "py-2" : "py-1";
+  const rowTextClass = isCompact ? "text-sm" : "text-xs";
+  const tableColSpan = isCompact ? 2 : 5;
 
   return (
-    <div className="space-y-2 h-full flex flex-col">
+    <div className={`space-y-2 h-full flex flex-col ${isCompact ? "text-sm" : ""}`}>
       <div className="flex items-center gap-2">
         <h3 className={`text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-700"}`}>
           {t("文件浏览", "File Browser")}
@@ -1082,48 +1124,127 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
       </div>
 
       {/* 路径输入框 */}
-      <div className="flex items-center gap-2">
+      <div className={`flex ${isCompact ? "flex-col items-stretch gap-2" : "items-center gap-2"}`}>
         <input
           type="text"
           value={pathInput}
           onChange={(e) => setPathInput(e.target.value)}
           onKeyDown={handlePathSubmit}
           placeholder={t("输入路径，按回车跳转", "Input path and press Enter")}
-          className={`flex-1 px-2 py-1 text-xs rounded border ${
+          className={`flex-1 px-2 ${isCompact ? "py-2 text-sm" : "py-1 text-xs"} rounded border ${
             isDark
               ? "bg-slate-800 border-slate-600 text-slate-200 placeholder:text-slate-500 focus:border-indigo-500"
               : "bg-white border-slate-300 text-slate-700 placeholder:text-slate-400 focus:border-indigo-400"
           } focus:outline-none`}
         />
-        <button
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className={`px-2 py-1 text-xs rounded border ${
+        <div className={`flex items-center gap-2 ${isCompact ? "flex-wrap" : ""}`}>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className={`px-2 ${isCompact ? "py-2 text-sm" : "py-1 text-xs"} rounded border ${
+              isDark
+                ? "bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600"
+                : "bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200"
+            } ${refreshing ? "opacity-50 cursor-not-allowed" : ""}`}
+            title={t("刷新", "Refresh")}
+          >
+            {refreshing ? <span className="animate-spin inline-block">⟳</span> : "↻"}
+          </button>
+          <label className={`flex items-center gap-1 px-2 ${isCompact ? "py-2 text-sm" : "py-1 text-xs"} rounded border cursor-pointer ${
             isDark
               ? "bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600"
               : "bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200"
-          } ${refreshing ? "opacity-50 cursor-not-allowed" : ""}`}
-          title={t("刷新", "Refresh")}
-        >
-          {refreshing ? <span className="animate-spin inline-block">⟳</span> : "↻"}
-        </button>
-        <label className={`flex items-center gap-1 px-2 py-1 text-xs rounded border cursor-pointer ${
-          isDark
-            ? "bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600"
-            : "bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200"
-        }`}>
-          <input
-            type="checkbox"
-            checked={compress}
-            onChange={(e) => setCompress(e.target.checked)}
-            className="w-3 h-3"
-          />
-          <span>{t("压缩上传", "Compressed upload")}</span>
-        </label>
+          }`}>
+            <input
+              type="checkbox"
+              checked={compress}
+              onChange={(e) => setCompress(e.target.checked)}
+              className="w-3 h-3"
+            />
+            <span>{t("压缩上传", "Compressed upload")}</span>
+          </label>
+        </div>
       </div>
 
+      {isCompact ? (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className={`rounded-full px-2 py-1 ${isDark ? "bg-slate-800 text-slate-300" : "bg-slate-200 text-slate-600"}`}>
+            {t("已选", "Selected")} {selectedCount}
+          </span>
+          <button
+            type="button"
+            onClick={() => handleActionForFiles("mkdir", [])}
+            className={`rounded-full px-3 py-2 ${isDark ? "bg-slate-800 text-slate-200" : "bg-white text-slate-700 border border-slate-200"}`}
+          >
+            {t("新建文件夹", "New folder")}
+          </button>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className={`rounded-full px-3 py-2 ${uploading ? "opacity-50 cursor-not-allowed" : ""} ${isDark ? "bg-slate-800 text-slate-200" : "bg-white text-slate-700 border border-slate-200"}`}
+          >
+            {t("上传文件", "Upload")}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleActionForFiles("touch", [])}
+            className={`rounded-full px-3 py-2 ${isDark ? "bg-slate-800 text-slate-200" : "bg-white text-slate-700 border border-slate-200"}`}
+          >
+            {t("新建文件", "New file")}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleActionForFiles("rename", selectedItems)}
+            disabled={!canRename}
+            className={`rounded-full px-3 py-2 ${canRename ? "" : "opacity-40 cursor-not-allowed"} ${isDark ? "bg-slate-800 text-slate-200" : "bg-white text-slate-700 border border-slate-200"}`}
+          >
+            {t("重命名", "Rename")}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleActionForFiles("chmod", selectedItems)}
+            disabled={!hasSelection}
+            className={`rounded-full px-3 py-2 ${hasSelection ? "" : "opacity-40 cursor-not-allowed"} ${isDark ? "bg-slate-800 text-slate-200" : "bg-white text-slate-700 border border-slate-200"}`}
+          >
+            {t("权限", "Permissions")}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleActionForFiles("download", selectedItems)}
+            disabled={!hasSelection}
+            className={`rounded-full px-3 py-2 ${hasSelection ? "" : "opacity-40 cursor-not-allowed"} ${isDark ? "bg-slate-800 text-slate-200" : "bg-white text-slate-700 border border-slate-200"}`}
+          >
+            {t("下载", "Download")}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleActionForFiles("delete", selectedItems)}
+            disabled={!hasSelection}
+            className={`rounded-full px-3 py-2 ${hasSelection ? "" : "opacity-40 cursor-not-allowed"} ${isDark ? "bg-rose-900/60 text-rose-200" : "bg-rose-50 text-rose-600 border border-rose-200"}`}
+          >
+            {t("删除", "Delete")}
+          </button>
+          <button
+            type="button"
+            onClick={handleClearSelection}
+            disabled={!hasSelection}
+            className={`rounded-full px-3 py-2 ${hasSelection ? "" : "opacity-40 cursor-not-allowed"} ${isDark ? "bg-slate-800 text-slate-200" : "bg-white text-slate-700 border border-slate-200"}`}
+          >
+            {t("取消选择", "Clear")}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={handleFileInputChange}
+          />
+        </div>
+      ) : null}
+
       <div
-        className={`flex rounded border flex-1 min-h-0 ${isDark ? "border-slate-700" : "border-slate-200"} ${(uploading || downloading) ? "opacity-50" : ""} relative`}
+        className={`flex rounded border flex-1 min-h-0 ${isCompact ? "flex-col" : ""} ${isDark ? "border-slate-700" : "border-slate-200"} ${(uploading || downloading) ? "opacity-50" : ""} relative`}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -1251,7 +1372,7 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
           </div>
         )}
         {/* 左侧树形目录 */}
-        <div className={`w-1/3 overflow-auto border-r ${isDark ? "border-slate-700 bg-slate-800/50 dark-scrollbar" : "border-slate-200 bg-slate-50 light-scrollbar"}`}>
+        <div className={`${isCompact ? "w-full max-h-40 border-b" : "w-1/3 border-r"} overflow-auto ${isDark ? "border-slate-700 bg-slate-800/50 dark-scrollbar" : "border-slate-200 bg-slate-50 light-scrollbar"}`}>
           <div className="p-1">
             {tree.map(node => renderTreeNode(node))}
           </div>
@@ -1276,23 +1397,29 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
               {error}
             </div>
           ) : (
-            <table className="w-full text-xs">
+            <table className={`w-full ${rowTextClass}`}>
               <thead className={`sticky top-0 ${isDark ? "bg-slate-800" : "bg-slate-100"}`}>
                 <tr className={isDark ? "text-slate-400" : "text-slate-500"}>
-                  <th className="text-left py-1 px-2 font-medium">{t("名称", "Name")}</th>
-                  <th className="text-right py-1 px-2 font-medium relative" style={{ width: colWidths.size }}>
+                  <th className={`text-left ${rowPaddingClass} px-2 font-medium`}>{t("名称", "Name")}</th>
+                  <th className={`text-right ${rowPaddingClass} px-2 font-medium relative`} style={{ width: colWidths.size }}>
                     {t("大小", "Size")}
-                    <div className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-indigo-500" onMouseDown={() => setResizingCol("size")} />
+                    {!isCompact ? (
+                      <div className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-indigo-500" onMouseDown={() => setResizingCol("size")} />
+                    ) : null}
                   </th>
-                  <th className="text-left py-1 px-2 font-medium relative" style={{ width: colWidths.permissions }}>
-                    {t("权限", "Permissions")}
-                    <div className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-indigo-500" onMouseDown={() => setResizingCol("permissions")} />
-                  </th>
-                  <th className="text-left py-1 px-2 font-medium relative" style={{ width: colWidths.owner }}>
-                    {t("用户", "Owner")}
-                    <div className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-indigo-500" onMouseDown={() => setResizingCol("owner")} />
-                  </th>
-                  <th className="text-left py-1 px-2 font-medium" style={{ width: colWidths.modified }}>{t("修改时间", "Modified Time")}</th>
+                  {!isCompact ? (
+                    <>
+                      <th className={`text-left ${rowPaddingClass} px-2 font-medium relative`} style={{ width: colWidths.permissions }}>
+                        {t("权限", "Permissions")}
+                        <div className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-indigo-500" onMouseDown={() => setResizingCol("permissions")} />
+                      </th>
+                      <th className={`text-left ${rowPaddingClass} px-2 font-medium relative`} style={{ width: colWidths.owner }}>
+                        {t("用户", "Owner")}
+                        <div className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-indigo-500" onMouseDown={() => setResizingCol("owner")} />
+                      </th>
+                      <th className={`text-left ${rowPaddingClass} px-2 font-medium`} style={{ width: colWidths.modified }}>{t("修改时间", "Modified Time")}</th>
+                    </>
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
@@ -1303,14 +1430,18 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
                     onClick={handleParentItemClick}
                     onDoubleClick={handleNavigateToParent}
                   >
-                    <td className="py-1 px-2 truncate max-w-[120px]" title={t(`返回上一级: ${parentPath}`, `Go to parent: ${parentPath}`)}>
+                    <td className={`${rowPaddingClass} px-2 truncate max-w-[120px]`} title={t(`返回上一级: ${parentPath}`, `Go to parent: ${parentPath}`)}>
                       <span className="mr-1">📁</span>
                       ...
                     </td>
-                    <td className={`py-1 px-2 text-right ${isDark ? "text-slate-400" : "text-slate-500"}`}>-</td>
-                    <td className={`py-1 px-2 font-mono ${isDark ? "text-slate-400" : "text-slate-500"}`}>-</td>
-                    <td className={`py-1 px-2 truncate ${isDark ? "text-slate-400" : "text-slate-500"}`}>-</td>
-                    <td className={`py-1 px-2 ${isDark ? "text-slate-400" : "text-slate-500"}`}>{t("返回上一级", "Go to parent")}</td>
+                    <td className={`${rowPaddingClass} px-2 text-right ${isDark ? "text-slate-400" : "text-slate-500"}`}>-</td>
+                    {!isCompact ? (
+                      <>
+                        <td className={`${rowPaddingClass} px-2 font-mono ${isDark ? "text-slate-400" : "text-slate-500"}`}>-</td>
+                        <td className={`${rowPaddingClass} px-2 truncate ${isDark ? "text-slate-400" : "text-slate-500"}`}>-</td>
+                        <td className={`${rowPaddingClass} px-2 ${isDark ? "text-slate-400" : "text-slate-500"}`}>{t("返回上一级", "Go to parent")}</td>
+                      </>
+                    ) : null}
                   </tr>
                 )}
                 {files.map((file) => (
@@ -1327,27 +1458,31 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
                       handleContextMenu(e, file);
                     }}
                   >
-                    <td className="py-1 px-2 truncate max-w-[120px]" title={file.name}>
+                    <td className={`${rowPaddingClass} px-2 truncate max-w-[120px]`} title={file.name}>
                       <span className="mr-1">{file.is_dir ? "📁" : "📄"}</span>
                       {file.name}
                     </td>
-                    <td className={`py-1 px-2 text-right ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                    <td className={`${rowPaddingClass} px-2 text-right ${isDark ? "text-slate-400" : "text-slate-500"}`}>
                       {file.is_dir ? "-" : formatFileSize(file.size)}
                     </td>
-                    <td className={`py-1 px-2 font-mono ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-                      {file.permissions}
-                    </td>
-                    <td className={`py-1 px-2 truncate ${isDark ? "text-slate-400" : "text-slate-500"}`} title={`${file.owner}:${file.group}`}>
-                      {file.owner}
-                    </td>
-                    <td className={`py-1 px-2 ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-                      {file.modified}
-                    </td>
+                    {!isCompact ? (
+                      <>
+                        <td className={`${rowPaddingClass} px-2 font-mono ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                          {file.permissions}
+                        </td>
+                        <td className={`${rowPaddingClass} px-2 truncate ${isDark ? "text-slate-400" : "text-slate-500"}`} title={`${file.owner}:${file.group}`}>
+                          {file.owner}
+                        </td>
+                        <td className={`${rowPaddingClass} px-2 ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                          {file.modified}
+                        </td>
+                      </>
+                    ) : null}
                   </tr>
                 ))}
                 {files.length === 0 && !filesLoading && (
                   <tr>
-                    <td colSpan={5} className={`py-4 text-center ${isDark ? "text-slate-500" : "text-slate-400"}`}>
+                    <td colSpan={tableColSpan} className={`py-4 text-center ${isDark ? "text-slate-500" : "text-slate-400"}`}>
                       {t("空目录", "Empty directory")}
                     </td>
                   </tr>
@@ -1475,4 +1610,3 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
     </div>
   );
 }
-
