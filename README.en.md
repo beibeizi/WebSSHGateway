@@ -17,8 +17,8 @@ A dedicated mobile layout provides touch-friendly interactions for terminal work
 
 ![Mobile Overview](./docs/images/mobile-overview.jpg)
 ![Mobile Terminal](./docs/images/mobile-terminal.jpg)
-![Mobile File Management](./docs/images/mobile-file%20management.jpg)
-![Mobile System Status](./docs/images/mobile-system%20status.jpg)
+![Mobile File Management](./docs/images/mobile-fileManagement.jpg)
+![Mobile System Status](./docs/images/mobile-systemStatus.jpg)
 
 ## Community Edition Notice
 

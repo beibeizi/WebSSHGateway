@@ -17,8 +17,8 @@ WebSSH Gateway 是一个面向运维和开发场景的浏览器 SSH 网关。你
 
 ![移动端概览](./docs/images/mobile-overview.jpg)
 ![移动端终端](./docs/images/mobile-terminal.jpg)
-![移动端文件管理](./docs/images/mobile-file%20management.jpg)
-![移动端系统状态](./docs/images/mobile-system%20status.jpg)
+![移动端文件管理](./docs/images/mobile-fileManagement.jpg)
+![移动端系统状态](./docs/images/mobile-systemStatus.jpg)
 
 ## 社区版声明
 
