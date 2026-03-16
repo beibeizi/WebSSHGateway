@@ -35,10 +35,11 @@ def _serialize_session_status(record: SessionRecord) -> str:
 
 
 def _required_elapsed_seconds_for_next_retry(retry_cycle_count: int) -> int:
-    # Retry spacing: 5s, 10s, 15s...
+    # Retry spacing (seconds): 2, 4, 8, 16, 32
     # retry_cycle_count is the number of attempts already made in current cycle.
-    next_attempt = retry_cycle_count + 1
-    return 5 * next_attempt * (next_attempt + 1) // 2
+    schedule = [2, 4, 8, 16, 32]
+    index = min(retry_cycle_count, len(schedule) - 1)
+    return schedule[index]
 
 
 def build_state() -> tuple[
@@ -95,7 +96,7 @@ def build_state() -> tuple[
                                 SessionRecord.allow_auto_retry.is_(True),
                                 SessionRecord.enhanced_fingerprint.is_not(None),
                                 SessionRecord.tmux_binary_path.is_not(None),
-                                SessionRecord.retry_cycle_count < 3,
+                                SessionRecord.retry_cycle_count < 5,
                             )
                         ).scalars().all()
 

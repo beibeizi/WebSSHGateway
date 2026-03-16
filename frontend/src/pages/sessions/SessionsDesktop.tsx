@@ -165,7 +165,7 @@ export function SessionsDesktop({ state }: SessionsDesktopProps) {
                         ) : null}
                         {session.enhanced_enabled && session.status !== "active" && session.allow_auto_retry !== false ? (
                           <p className={`text-xs ${state.isDark ? "text-slate-500" : "text-slate-400"}`}>
-                            {state.t("本轮重试", "Retry cycle")}: {session.retry_cycle_count ?? 0}/3
+                            {state.t("本轮重试", "Retry cycle")}: {session.retry_cycle_count ?? 0}/5
                           </p>
                         ) : null}
                       </div>

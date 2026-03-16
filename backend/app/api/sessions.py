@@ -388,7 +388,8 @@ async def retry_enhanced_session(
     pty = session_manager.deserialize_pty(record.pty_info)
 
     last_error: Exception | None = None
-    for attempt in range(1, 4):
+    retry_schedule = [2, 4, 8, 16, 32]
+    for attempt in range(1, len(retry_schedule) + 1):
         try:
             await session_manager.close_session(session_id)
             managed = await session_manager.create_session(
@@ -412,7 +413,8 @@ async def retry_enhanced_session(
             return response
         except Exception as exc:
             last_error = exc
-            await asyncio.sleep(5)
+            if attempt < len(retry_schedule):
+                await asyncio.sleep(retry_schedule[attempt - 1])
 
     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(last_error) if last_error else "重试失败")
 

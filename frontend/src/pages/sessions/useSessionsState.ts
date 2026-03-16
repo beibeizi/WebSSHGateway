@@ -201,7 +201,7 @@ export function useSessionsState() {
       session.enhanced_enabled === true
       && session.status !== "active"
       && session.allow_auto_retry !== false
-      && (session.retry_cycle_count ?? 0) < 3
+      && (session.retry_cycle_count ?? 0) < 5
     );
   }, []);
 

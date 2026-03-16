@@ -184,13 +184,15 @@ export function useTerminalSocket({
         }
 
         if (autoReconnect && !event.wasClean && reconnectAttemptRef.current < 5) {
+          const schedule = [2, 4, 8, 16, 32];
           const attempt = reconnectAttemptRef.current + 1;
-          const delay = attempt * 5000;
+          const delaySeconds = schedule[attempt - 1] ?? schedule[schedule.length - 1];
+          const delay = delaySeconds * 1000;
           reconnectAttemptRef.current = attempt;
 
           const reconnectMessage = t(
-            `连接已断开，${Math.round(delay / 1000)}秒后自动重连 (${reconnectAttemptRef.current}/5)...`,
-            `Connection lost. Auto reconnect in ${Math.round(delay / 1000)}s (${reconnectAttemptRef.current}/5)...`
+            `连接已断开，${delaySeconds}秒后自动重连 (${reconnectAttemptRef.current}/5)...`,
+            `Connection lost. Auto reconnect in ${delaySeconds}s (${reconnectAttemptRef.current}/5)...`
           );
           term.write(`\r\n\x1b[31m${reconnectMessage}\x1b[0m\r\n`);
           setReconnectCountdown(Math.round(delay / 1000));
