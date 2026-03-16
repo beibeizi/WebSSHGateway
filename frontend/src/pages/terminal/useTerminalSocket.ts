@@ -247,6 +247,46 @@ export function useTerminalSocket({
   const connectSocketRef = React.useRef(connectSocket);
   const sendInputRef = React.useRef(sendInput);
   const syncTerminalSizeRef = React.useRef(syncTerminalSize);
+  const scrollTerminal = React.useCallback((direction: "up" | "down") => {
+    const term = terminalInstance.current;
+    const container = terminalRef.current;
+    if (!term || !container) {
+      return;
+    }
+    if (term.modes.mouseTrackingMode !== "none") {
+      return;
+    }
+    const lineDelta = direction === "up" ? -8 : 8;
+    const sendTmuxWheelPage = (delta: number) => {
+      if (delta === 0) {
+        return;
+      }
+      const sequence = delta < 0 ? "\x1b[5~" : "\x1b[6~";
+      sendInput(sequence);
+    };
+    const activeBuffer = term.buffer.active;
+    const hasLocalScrollback = activeBuffer.type === "normal" && activeBuffer.baseY > 0;
+    if (!hasLocalScrollback) {
+      sendTmuxWheelPage(lineDelta);
+      return;
+    }
+    const viewport = container.querySelector<HTMLElement>(".xterm-viewport");
+    if (viewport) {
+      const maxScrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+      const isAtTop = viewport.scrollTop <= 0;
+      const isAtBottom = viewport.scrollTop >= maxScrollTop;
+      const isEnhancedSession = enhancedSessionRef.current;
+      if (isEnhancedSession && lineDelta < 0 && isAtTop) {
+        sendTmuxWheelPage(lineDelta);
+        return;
+      }
+      if (isEnhancedSession && lineDelta > 0 && isAtBottom) {
+        sendTmuxWheelPage(lineDelta);
+        return;
+      }
+    }
+    term.scrollLines(lineDelta);
+  }, [sendInput, enhancedSessionRef]);
 
   React.useEffect(() => {
     connectSocketRef.current = connectSocket;
@@ -461,6 +501,7 @@ export function useTerminalSocket({
     autoReconnect,
     setAutoReconnect,
     syncTerminalSize,
+    scrollTerminal,
     handleReconnect,
     handleCancelReconnect,
   };

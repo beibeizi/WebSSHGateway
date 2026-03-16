@@ -13,7 +13,7 @@ type MobileTab = "terminal" | "files" | "system";
 
 export function TerminalMobile({ state, onBack }: TerminalMobileProps) {
   const [activeTab, setActiveTab] = React.useState<MobileTab>("terminal");
-  const { syncTerminalSize, terminalInstance } = state;
+  const { syncTerminalSize, terminalInstance, scrollTerminal } = state;
 
   React.useEffect(() => {
     if (activeTab !== "terminal") {
@@ -26,15 +26,6 @@ export function TerminalMobile({ state, onBack }: TerminalMobileProps) {
     syncTerminalSize(term, { force: true });
     term.focus();
   }, [activeTab, syncTerminalSize, terminalInstance]);
-
-  const handleScroll = React.useCallback((direction: "up" | "down") => {
-    const term = terminalInstance.current;
-    if (!term) {
-      return;
-    }
-    const lines = direction === "up" ? -8 : 8;
-    term.scrollLines(lines);
-  }, [terminalInstance]);
 
   const actions = [
     {
@@ -151,7 +142,7 @@ export function TerminalMobile({ state, onBack }: TerminalMobileProps) {
             <div className="absolute right-4 bottom-4 flex flex-col gap-2">
               <button
                 type="button"
-                onClick={() => handleScroll("up")}
+                onClick={() => scrollTerminal("up")}
                 className={`h-10 w-10 rounded-full border text-base ${
                   state.isDark
                     ? "border-slate-700 bg-slate-900/90 text-slate-200"
@@ -163,7 +154,7 @@ export function TerminalMobile({ state, onBack }: TerminalMobileProps) {
               </button>
               <button
                 type="button"
-                onClick={() => handleScroll("down")}
+                onClick={() => scrollTerminal("down")}
                 className={`h-10 w-10 rounded-full border text-base ${
                   state.isDark
                     ? "border-slate-700 bg-slate-900/90 text-slate-200"

@@ -156,6 +156,7 @@ export function useTerminalSession(sessionId?: string) {
     autoReconnect: socketState.autoReconnect,
     setAutoReconnect: socketState.setAutoReconnect,
     syncTerminalSize: socketState.syncTerminalSize,
+    scrollTerminal: socketState.scrollTerminal,
     handleReconnect: socketState.handleReconnect,
     handleCancelReconnect: socketState.handleCancelReconnect,
     sessionInfo: sessionInfoState.sessionInfo,
