@@ -253,9 +253,6 @@ export function useTerminalSocket({
     if (!term || !container) {
       return;
     }
-    if (term.modes.mouseTrackingMode !== "none") {
-      return;
-    }
     const lineDelta = direction === "up" ? -8 : 8;
     const sendTmuxWheelPage = (delta: number) => {
       if (delta === 0) {
