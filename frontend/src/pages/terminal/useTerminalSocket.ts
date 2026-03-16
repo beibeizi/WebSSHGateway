@@ -247,7 +247,7 @@ export function useTerminalSocket({
   const connectSocketRef = React.useRef(connectSocket);
   const sendInputRef = React.useRef(sendInput);
   const syncTerminalSizeRef = React.useRef(syncTerminalSize);
-  const scrollTerminal = React.useCallback((direction: "up" | "down") => {
+  const scrollTerminal = React.useCallback((direction: "up" | "down", mode: "auto" | "remote" = "auto") => {
     const term = terminalInstance.current;
     const container = terminalRef.current;
     if (!term || !container) {
@@ -261,6 +261,10 @@ export function useTerminalSocket({
       const sequence = delta < 0 ? "\x1b[5~" : "\x1b[6~";
       sendInput(sequence);
     };
+    if (mode === "remote") {
+      sendTmuxWheelPage(lineDelta);
+      return;
+    }
     const activeBuffer = term.buffer.active;
     const hasLocalScrollback = activeBuffer.type === "normal" && activeBuffer.baseY > 0;
     if (!hasLocalScrollback) {

@@ -142,7 +142,7 @@ export function TerminalMobile({ state, onBack }: TerminalMobileProps) {
             <div className="absolute right-4 bottom-4 flex flex-col gap-2">
               <button
                 type="button"
-                onClick={() => scrollTerminal("up")}
+                onClick={() => scrollTerminal("up", "remote")}
                 className={`h-10 w-10 rounded-full border text-base ${
                   state.isDark
                     ? "border-slate-700 bg-slate-900/90 text-slate-200"
@@ -154,7 +154,7 @@ export function TerminalMobile({ state, onBack }: TerminalMobileProps) {
               </button>
               <button
                 type="button"
-                onClick={() => scrollTerminal("down")}
+                onClick={() => scrollTerminal("down", "remote")}
                 className={`h-10 w-10 rounded-full border text-base ${
                   state.isDark
                     ? "border-slate-700 bg-slate-900/90 text-slate-200"
