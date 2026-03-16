@@ -261,8 +261,25 @@ export function useTerminalSocket({
       const sequence = delta < 0 ? "\x1b[5~" : "\x1b[6~";
       sendInput(sequence);
     };
+    const sendTmuxMouseWheel = (delta: number) => {
+      if (delta === 0) {
+        return;
+      }
+      const col = Math.max(1, Math.floor(term.cols / 2));
+      const row = Math.max(1, Math.floor(term.rows / 2));
+      const code = delta < 0 ? 64 : 65;
+      sendInput(`\x1b[<${code};${col};${row}M`);
+    };
     if (mode === "remote") {
-      sendTmuxWheelPage(lineDelta);
+      if (enhancedSessionRef.current && term.modes.mouseTrackingMode !== "none") {
+        sendTmuxMouseWheel(lineDelta);
+        return;
+      }
+      if (enhancedSessionRef.current) {
+        term.scrollLines(lineDelta);
+        return;
+      }
+      term.scrollLines(lineDelta);
       return;
     }
     const activeBuffer = term.buffer.active;
