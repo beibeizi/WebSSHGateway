@@ -18,11 +18,13 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.api.dependencies import AppState, get_current_user, get_state, get_db
+from app.core.logging import get_logger
 from app.models.connection import Connection
 from app.models.session import SessionRecord
 from app.services.crypto import CryptoService, EncryptedPayload
 
 router = APIRouter(prefix="/system", tags=["system"])
+logger = get_logger(__name__)
 
 
 class MemoryInfo(BaseModel):
@@ -167,11 +169,6 @@ async def resolve_ssh_client(
     user,
     db,
 ) -> AsyncIterator:
-    session = state.session_manager.get_session(session_id)
-    if session:
-        yield session.client
-        return
-
     record = db.execute(
         select(SessionRecord).where(SessionRecord.id == session_id, SessionRecord.user_id == user.id)
     ).scalar_one_or_none()
@@ -189,6 +186,9 @@ async def resolve_ssh_client(
     decrypted = crypto.decrypt(EncryptedPayload(nonce=auth_data["nonce"], ciphertext=auth_data["ciphertext"]))
     auth_payload = json.loads(decrypted)
 
+    # System/file APIs must not reuse the terminal session SSH client.
+    # Long-lived enhanced sessions may keep the tmux PTY channel alive while
+    # auxiliary exec channels on the same client become unusable.
     client = await state.session_manager.connect_client(conn, auth_payload)
     try:
         yield client
@@ -206,8 +206,10 @@ async def run_ssh_command(session_or_client, command: str, timeout: float = 5.0)
         )
         return result.stdout or ""
     except asyncio.TimeoutError:
+        logger.warning("system ssh command timed out timeout=%s command=%s", timeout, command)
         return ""
-    except Exception:
+    except Exception as exc:
+        logger.warning("system ssh command failed command=%s error=%s", command, exc)
         return ""
 
 
