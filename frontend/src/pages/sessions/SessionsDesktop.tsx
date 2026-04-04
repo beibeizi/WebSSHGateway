@@ -111,6 +111,15 @@ export function SessionsDesktop({ state }: SessionsDesktopProps) {
                   isDark={state.isDark}
                   label={state.t("系统状态", "System Status")}
                 />
+                <Button
+                  variant="secondary"
+                  lightMode={!state.isDark}
+                  onClick={() => {
+                    window.location.href = "/settings";
+                  }}
+                >
+                  {state.t("系统设置", "System Settings")}
+                </Button>
               </div>
             </div>
 
@@ -173,7 +182,7 @@ export function SessionsDesktop({ state }: SessionsDesktopProps) {
                         ) : null}
                         {session.enhanced_enabled && session.status !== "active" && session.allow_auto_retry !== false ? (
                           <p className={`text-xs ${state.isDark ? "text-slate-500" : "text-slate-400"}`}>
-                            {state.t("本轮重试", "Retry cycle")}: {session.retry_cycle_count ?? 0}/5
+                            {state.t("本轮重试", "Retry cycle")}: {session.retry_cycle_count ?? 0}/{state.enhancedRetryMaxAttempts}
                           </p>
                         ) : null}
                       </div>

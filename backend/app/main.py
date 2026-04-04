@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import update
 from starlette.responses import JSONResponse, Response
 
-from app.api import auth, connections, health, session_status, sessions, system, ws_sessions
+from app.api import auth, connections, health, session_status, sessions, system, system_settings, ws_sessions
 from app.api.dependencies import AppState, get_state
 from app.api.middleware import RequestLoggingMiddleware
 from app.core.db import utc_now
@@ -22,6 +22,7 @@ from app.services.bootstrap import (
     ensure_session_enhanced_columns,
     ensure_session_note_column,
     ensure_session_order_column,
+    ensure_system_settings,
 )
 
 logger = get_logger(__name__)
@@ -46,6 +47,7 @@ def create_app() -> FastAPI:
     ensure_connection_arch_columns(database)
     ensure_session_enhanced_columns(database)
     ensure_session_order_column(database)
+    ensure_system_settings(database)
 
     with database.session() as db_session:
         password = ensure_admin_user(db_session, auth_service)
@@ -127,6 +129,7 @@ def create_app() -> FastAPI:
     app.include_router(ws_sessions.router)
     app.include_router(health.router)
     app.include_router(system.router)
+    app.include_router(system_settings.router)
     app.include_router(session_status.router)
 
     static_dir = Path(__file__).resolve().parent.parent / "frontend" / "dist"
@@ -137,7 +140,7 @@ def create_app() -> FastAPI:
         if index_path.exists():
             index_bytes = index_path.read_bytes()
             index_response = Response(content=index_bytes, media_type="text/html")
-            spa_exact_paths = {"/", "/sessions", "/force-password"}
+            spa_exact_paths = {"/", "/sessions", "/force-password", "/settings"}
             spa_prefix_paths = ("/terminal/",)
 
             def is_spa_document_request(request: Request) -> bool:

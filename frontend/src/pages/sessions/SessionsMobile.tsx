@@ -96,6 +96,16 @@ export function SessionsMobile({ state }: SessionsMobileProps) {
               isDark={state.isDark}
               label={state.t("系统状态", "System Status")}
             />
+            <Button
+              variant="secondary"
+              lightMode={!state.isDark}
+              onClick={() => {
+                window.location.href = "/settings";
+              }}
+              className="px-3 py-2 text-xs whitespace-nowrap"
+            >
+              {state.t("系统设置", "System Settings")}
+            </Button>
           </div>
         </div>
 
@@ -167,6 +177,11 @@ export function SessionsMobile({ state }: SessionsMobileProps) {
                     {session.disconnected_at ? (
                       <p className={`text-xs ${state.isDark ? "text-slate-500" : "text-slate-400"}`}>
                         {state.t("断开时间", "Disconnected at")}: {new Date(session.disconnected_at).toLocaleString()}
+                      </p>
+                    ) : null}
+                    {session.enhanced_enabled && session.status !== "active" && session.allow_auto_retry !== false ? (
+                      <p className={`text-xs ${state.isDark ? "text-slate-500" : "text-slate-400"}`}>
+                        {state.t("本轮重试", "Retry cycle")}: {session.retry_cycle_count ?? 0}/{state.enhancedRetryMaxAttempts}
                       </p>
                     ) : null}
                   </div>

@@ -596,6 +596,13 @@ export type SessionStatusSummary = {
   network: NetworkInfo;
 };
 
+export type GlobalSystemSettings = {
+  enhanced_retry_max_attempts: number;
+  enhanced_retry_schedule_seconds: number[];
+  session_status_refresh_interval_seconds: number;
+  default_enable_enhanced_session: boolean;
+};
+
 export async function getSystemStats(sessionId: string): Promise<SystemStats> {
   const response = await fetch(`${HTTP_BASE}/system/stats/${sessionId}`, {
     headers: { ...getAuthHeader() }
@@ -635,6 +642,30 @@ export async function getSessionStatusSummary(sessionId: string): Promise<Sessio
   });
   if (!response.ok) {
     const detail = await safeError(response, "获取会话系统状态失败");
+    throw new Error(detail);
+  }
+  return response.json();
+}
+
+export async function getSystemSettings(): Promise<GlobalSystemSettings> {
+  const response = await fetch(`${HTTP_BASE}/system/settings`, {
+    headers: { ...getAuthHeader() }
+  });
+  if (!response.ok) {
+    const detail = await safeError(response, "获取系统设置失败");
+    throw new Error(detail);
+  }
+  return response.json();
+}
+
+export async function updateSystemSettings(payload: GlobalSystemSettings): Promise<GlobalSystemSettings> {
+  const response = await fetch(`${HTTP_BASE}/system/settings`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...getAuthHeader() },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    const detail = await safeError(response, "保存系统设置失败");
     throw new Error(detail);
   }
   return response.json();

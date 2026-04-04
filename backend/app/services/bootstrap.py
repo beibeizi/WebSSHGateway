@@ -12,6 +12,7 @@ from app.core.db import Database
 from app.models.session import SessionRecord
 from app.models.user import User
 from app.services.auth import AuthService
+from app.services.system_settings import ensure_system_settings_record
 
 
 def _generate_initial_password() -> str:
@@ -124,6 +125,11 @@ def ensure_session_order_column(database: Database) -> None:
             next_order = last_order_by_user.get(record.user_id, 0) + 1
             record.session_order = next_order
             last_order_by_user[record.user_id] = next_order
+
+
+def ensure_system_settings(database: Database) -> None:
+    with database.session() as db_session:
+        ensure_system_settings_record(db_session)
 
 
 def is_user_locked(user: User, auth_service: AuthService) -> bool:

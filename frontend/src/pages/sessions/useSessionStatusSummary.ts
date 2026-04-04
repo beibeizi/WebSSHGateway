@@ -7,7 +7,6 @@ export type SessionStatusEntry = {
   error: boolean;
 };
 
-const POLL_INTERVAL_MS = 3000;
 const MAX_CONCURRENT_REQUESTS = 3;
 
 async function runWithConcurrency<T>(
@@ -29,7 +28,7 @@ async function runWithConcurrency<T>(
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
 }
 
-export function useSessionStatusSummary(visibleSessions: Session[], enabled: boolean) {
+export function useSessionStatusSummary(visibleSessions: Session[], enabled: boolean, pollIntervalMs: number) {
   const activeSessionIds = React.useMemo(
     () => visibleSessions.filter((session) => session.status === "active").map((session) => session.id),
     [visibleSessions]
@@ -127,12 +126,12 @@ export function useSessionStatusSummary(visibleSessions: Session[], enabled: boo
     void fetchStatuses();
     const timer = window.setInterval(() => {
       void fetchStatuses();
-    }, POLL_INTERVAL_MS);
+    }, Math.max(1000, pollIntervalMs));
 
     return () => {
       window.clearInterval(timer);
     };
-  }, [enabled, fetchStatuses]);
+  }, [enabled, fetchStatuses, pollIntervalMs]);
 
   return statusEntries;
 }
