@@ -1,5 +1,5 @@
 import React from "react";
-import { clearAuthStorage, getStoredToken, pingServer } from "../lib/api";
+import { clearAuthStorage, getStoredToken, getSystemSettings, GlobalSystemSettings, pingServer } from "../lib/api";
 import { AppLanguage, getStoredLanguage, LANGUAGE_STORAGE_KEY, saveLanguage } from "../lib/i18n";
 
 type Theme = "dark" | "light";
@@ -45,6 +45,10 @@ type AppContextType = {
   networkPingErrorStreak: number;
   reportNetworkHint: (profile: WeakNetworkProfile, ttlMs?: number) => void;
   clearNetworkHint: () => void;
+  systemSettings: GlobalSystemSettings | null;
+  systemSettingsLoading: boolean;
+  refreshSystemSettings: () => Promise<GlobalSystemSettings | null>;
+  applySystemSettings: (settings: GlobalSystemSettings) => void;
 };
 
 const AppContext = React.createContext<AppContextType | null>(null);
@@ -68,6 +72,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [networkLatencySamples, setNetworkLatencySamples] = React.useState<number[]>([]);
   const [networkPingErrorStreak, setNetworkPingErrorStreak] = React.useState(0);
   const [networkHint, setNetworkHint] = React.useState<NetworkHint>(null);
+  const [systemSettings, setSystemSettings] = React.useState<GlobalSystemSettings | null>(null);
+  const [systemSettingsLoading, setSystemSettingsLoading] = React.useState(false);
   const pingInFlightRef = React.useRef(false);
 
   const networkAverageLatency = React.useMemo(() => {
@@ -150,6 +156,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setNetworkHint(null);
   }, []);
 
+  const applySystemSettings = React.useCallback((settings: GlobalSystemSettings) => {
+    setSystemSettings(settings);
+  }, []);
+
+  const refreshSystemSettings = React.useCallback(async () => {
+    if (!getStoredToken()) {
+      setSystemSettings(null);
+      setSystemSettingsLoading(false);
+      return null;
+    }
+
+    setSystemSettingsLoading(true);
+    try {
+      const settings = await getSystemSettings();
+      setSystemSettings(settings);
+      return settings;
+    } catch (error) {
+      console.warn("failed to load system settings", error);
+      return null;
+    } finally {
+      setSystemSettingsLoading(false);
+    }
+  }, []);
+
   // 监听 localStorage 变化（跨标签页同步）
   React.useEffect(() => {
     if (!localStorage.getItem(LANGUAGE_STORAGE_KEY)) {
@@ -190,6 +220,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setNetworkLatencySamples([]);
       setNetworkPingErrorStreak(0);
       setNetworkHint(null);
+      setSystemSettings(null);
+      setSystemSettingsLoading(false);
       pingInFlightRef.current = false;
       return;
     }
@@ -229,6 +261,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   }, [user?.id, networkPingIntervalMs]);
 
+  React.useEffect(() => {
+    if (!user) {
+      return;
+    }
+    void refreshSystemSettings();
+  }, [user?.id, refreshSystemSettings]);
+
   const value: AppContextType = {
     theme,
     setTheme,
@@ -248,6 +287,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     networkPingErrorStreak,
     reportNetworkHint,
     clearNetworkHint,
+    systemSettings,
+    systemSettingsLoading,
+    refreshSystemSettings,
+    applySystemSettings,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

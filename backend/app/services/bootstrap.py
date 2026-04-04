@@ -12,6 +12,7 @@ from app.core.db import Database
 from app.models.session import SessionRecord
 from app.models.user import User
 from app.services.auth import AuthService
+from app.services.system_settings import ensure_system_settings_record
 
 
 def _generate_initial_password() -> str:
@@ -124,6 +125,20 @@ def ensure_session_order_column(database: Database) -> None:
             next_order = last_order_by_user.get(record.user_id, 0) + 1
             record.session_order = next_order
             last_order_by_user[record.user_id] = next_order
+
+
+def ensure_system_settings(database: Database) -> None:
+    inspector = inspect(database._engine)
+    if "system_settings" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("system_settings")}
+        with database._engine.begin() as connection:
+            if "default_enable_enhanced_session" not in columns:
+                connection.execute(text("ALTER TABLE system_settings ADD COLUMN default_enable_enhanced_session BOOLEAN DEFAULT 0"))
+            if "show_session_status_summary" not in columns:
+                connection.execute(text("ALTER TABLE system_settings ADD COLUMN show_session_status_summary BOOLEAN DEFAULT 1"))
+
+    with database.session() as db_session:
+        ensure_system_settings_record(db_session)
 
 
 def is_user_locked(user: User, auth_service: AuthService) -> bool:

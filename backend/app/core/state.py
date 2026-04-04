@@ -15,6 +15,7 @@ from app.services.auth import AuthService
 from app.services.crypto import CryptoService, EncryptedPayload
 from app.services.session_updates import SessionBroadcaster
 from app.services.ssh_manager import SessionManager
+from app.services.system_settings import load_runtime_system_settings, resolve_retry_delay_seconds
 
 logger = get_logger(__name__)
 
@@ -34,12 +35,8 @@ def _serialize_session_status(record: SessionRecord) -> str:
     )
 
 
-def _required_elapsed_seconds_for_next_retry(retry_cycle_count: int) -> int:
-    # Retry spacing (seconds): 2, 4, 8, 16, 32
-    # retry_cycle_count is the number of attempts already made in current cycle.
-    schedule = [2, 4, 8, 16, 32]
-    index = min(retry_cycle_count, len(schedule) - 1)
-    return schedule[index]
+def _required_elapsed_seconds_for_next_retry(retry_cycle_count: int, retry_schedule_seconds: list[int]) -> int:
+    return resolve_retry_delay_seconds(retry_cycle_count, retry_schedule_seconds)
 
 
 def build_state() -> tuple[
@@ -89,6 +86,7 @@ def build_state() -> tuple[
                 await asyncio.sleep(5)
                 try:
                     with database.session() as db:
+                        settings = load_runtime_system_settings(db)
                         candidates = db.execute(
                             select(SessionRecord).where(
                                 SessionRecord.status == "disconnected",
@@ -96,7 +94,7 @@ def build_state() -> tuple[
                                 SessionRecord.allow_auto_retry.is_(True),
                                 SessionRecord.enhanced_fingerprint.is_not(None),
                                 SessionRecord.tmux_binary_path.is_not(None),
-                                SessionRecord.retry_cycle_count < 5,
+                                SessionRecord.retry_cycle_count < settings.enhanced_retry_max_attempts,
                             )
                         ).scalars().all()
 
@@ -104,7 +102,10 @@ def build_state() -> tuple[
                         for record in candidates:
                             if not record.disconnected_at:
                                 record.disconnected_at = now
-                            required_elapsed = _required_elapsed_seconds_for_next_retry(record.retry_cycle_count)
+                            required_elapsed = _required_elapsed_seconds_for_next_retry(
+                                record.retry_cycle_count,
+                                settings.enhanced_retry_schedule_seconds,
+                            )
                             elapsed = (now - record.disconnected_at).total_seconds()
                             if elapsed < required_elapsed:
                                 continue

@@ -45,3 +45,6 @@ htmlcov/
 
 # Tasks (local only)
 tasks/
+
+# Local contributor instructions
+AGENTS.md

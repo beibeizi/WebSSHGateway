@@ -17,6 +17,7 @@ import {
   updateSessionNote,
 } from "../../lib/api";
 import { localizeText, normalizeTargetProfile, pickWorseProfile } from "./sessionsUtils";
+import { useSessionStatusSummary } from "./useSessionStatusSummary";
 import { useSessionsOrdering } from "./useSessionsOrdering";
 import { useSessionsPolling } from "./useSessionsPolling";
 import { usePasswordDialog } from "./usePasswordDialog";
@@ -66,7 +67,7 @@ export function useSessionsState() {
     checked: boolean;
   } | null>(null);
   const { push } = useToast();
-  const { isDark, toggleTheme, toggleLanguage, language, networkProfile, reportNetworkHint } = useApp();
+  const { isDark, toggleTheme, toggleLanguage, language, networkProfile, reportNetworkHint, systemSettings, refreshSystemSettings } = useApp();
   const t = React.useCallback((zh: string, en: string) => localizeText(language, zh, en), [language]);
   const passwordDialog = usePasswordDialog({ push, t });
   const sessionsRef = React.useRef<Session[]>([]);
@@ -125,11 +126,21 @@ export function useSessionsState() {
     });
   }, [sessions]);
 
-  const filteredSessions = orderedSessions.filter((session) => {
-    const matchStatus = filter === "all" || session.status === filter;
-    const matchSearch = (session.name || "").toLowerCase().includes(search.toLowerCase());
-    return matchStatus && matchSearch;
-  });
+  const filteredSessions = React.useMemo(() => {
+    const normalizedSearch = search.toLowerCase();
+    return orderedSessions.filter((session) => {
+      const matchStatus = filter === "all" || session.status === filter;
+      const matchSearch = (session.name || "").toLowerCase().includes(normalizedSearch);
+      return matchStatus && matchSearch;
+    });
+  }, [filter, orderedSessions, search]);
+  const enhancedRetryMaxAttempts = systemSettings?.enhanced_retry_max_attempts ?? 5;
+  const showSessionStatusSummary = systemSettings?.show_session_status_summary ?? true;
+  const sessionStatusEntries = useSessionStatusSummary(
+    filteredSessions,
+    showSessionStatusSummary,
+    (systemSettings?.session_status_refresh_interval_seconds ?? 3) * 1000
+  );
 
   const ordering = useSessionsOrdering({
     orderedSessions,
@@ -201,9 +212,9 @@ export function useSessionsState() {
       session.enhanced_enabled === true
       && session.status !== "active"
       && session.allow_auto_retry !== false
-      && (session.retry_cycle_count ?? 0) < 5
+      && (session.retry_cycle_count ?? 0) < enhancedRetryMaxAttempts
     );
-  }, []);
+  }, [enhancedRetryMaxAttempts]);
 
   const handleCreateConnection = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -257,7 +268,12 @@ export function useSessionsState() {
     const timeoutId = window.setTimeout(() => controller.abort(), 10000);
 
     try {
+      const effectiveSystemSettings = systemSettings ?? await refreshSystemSettings();
       const prepared = await prepareSession(connectionId, { signal: controller.signal });
+      if (prepared.supports_enhanced && effectiveSystemSettings?.default_enable_enhanced_session) {
+        await createSessionWithOption(connectionId, controller.signal, true);
+        return;
+      }
       if (prepared.should_prompt_enhance) {
         setEnhancePrompt({
           open: true,
@@ -461,6 +477,9 @@ export function useSessionsState() {
     editForm,
     setEditForm,
     noteDrafts,
+    showSessionStatusSummary,
+    sessionStatusEntries,
+    enhancedRetryMaxAttempts,
     handleNoteChange,
     handleSaveNote,
     deleteConfirm,

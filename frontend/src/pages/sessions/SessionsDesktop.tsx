@@ -5,6 +5,7 @@ import { Input } from "../../components/Input";
 import type { SessionsState } from "./useSessionsState";
 import { SessionsConnectionsPanel } from "./SessionsConnectionsPanel";
 import { SessionsDialogs } from "./SessionsDialogs";
+import { SessionStatusSummary } from "./SessionStatusSummary";
 import { clearAuthStorage } from "../../lib/api";
 
 type SessionsDesktopProps = {
@@ -103,6 +104,15 @@ export function SessionsDesktop({ state }: SessionsDesktopProps) {
                     {item.label}
                   </Button>
                 ))}
+                <Button
+                  variant="secondary"
+                  lightMode={!state.isDark}
+                  onClick={() => {
+                    window.location.href = "/settings";
+                  }}
+                >
+                  {state.t("系统设置", "System Settings")}
+                </Button>
               </div>
             </div>
 
@@ -165,7 +175,7 @@ export function SessionsDesktop({ state }: SessionsDesktopProps) {
                         ) : null}
                         {session.enhanced_enabled && session.status !== "active" && session.allow_auto_retry !== false ? (
                           <p className={`text-xs ${state.isDark ? "text-slate-500" : "text-slate-400"}`}>
-                            {state.t("本轮重试", "Retry cycle")}: {session.retry_cycle_count ?? 0}/5
+                            {state.t("本轮重试", "Retry cycle")}: {session.retry_cycle_count ?? 0}/{state.enhancedRetryMaxAttempts}
                           </p>
                         ) : null}
                       </div>
@@ -190,6 +200,15 @@ export function SessionsDesktop({ state }: SessionsDesktopProps) {
                         </Button>
                       </div>
                     </div>
+                    {state.showSessionStatusSummary && session.status === "active" ? (
+                      <div className="mt-4">
+                        <SessionStatusSummary
+                          entry={state.sessionStatusEntries[session.id]}
+                          isDark={state.isDark}
+                          t={state.t}
+                        />
+                      </div>
+                    ) : null}
                     <div className="mt-4 space-y-2">
                       <Input
                         placeholder={state.t("备注", "Note")}

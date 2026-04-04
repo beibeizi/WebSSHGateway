@@ -27,6 +27,7 @@ from app.schemas.api import (
 from app.services.crypto import CryptoService, EncryptedPayload
 from app.services.session_updates import SessionBroadcaster
 from app.services.ssh_manager import ManagedSession, SessionManager
+from app.services.system_settings import load_runtime_system_settings, resolve_retry_delay_seconds
 from app.services.types import PtyInfo
 
 logger = get_logger(__name__)
@@ -386,10 +387,10 @@ async def retry_enhanced_session(
     session_manager: SessionManager = state.session_manager
     broadcaster: SessionBroadcaster = state.session_broadcaster
     pty = session_manager.deserialize_pty(record.pty_info)
+    settings = load_runtime_system_settings(db)
 
     last_error: Exception | None = None
-    retry_schedule = [2, 4, 8, 16, 32]
-    for attempt in range(1, len(retry_schedule) + 1):
+    for attempt in range(1, settings.enhanced_retry_max_attempts + 1):
         try:
             await session_manager.close_session(session_id)
             managed = await session_manager.create_session(
@@ -413,8 +414,8 @@ async def retry_enhanced_session(
             return response
         except Exception as exc:
             last_error = exc
-            if attempt < len(retry_schedule):
-                await asyncio.sleep(retry_schedule[attempt - 1])
+            if attempt < settings.enhanced_retry_max_attempts:
+                await asyncio.sleep(resolve_retry_delay_seconds(attempt - 1, settings.enhanced_retry_schedule_seconds))
 
     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(last_error) if last_error else "重试失败")
 

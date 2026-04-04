@@ -5,6 +5,7 @@ import { Input } from "../../components/Input";
 import type { SessionsState } from "./useSessionsState";
 import { SessionsConnectionsPanel } from "./SessionsConnectionsPanel";
 import { SessionsDialogs } from "./SessionsDialogs";
+import { SessionStatusSummary } from "./SessionStatusSummary";
 import { clearAuthStorage } from "../../lib/api";
 
 type SessionsMobileProps = {
@@ -88,6 +89,16 @@ export function SessionsMobile({ state }: SessionsMobileProps) {
                 {item.label}
               </Button>
             ))}
+            <Button
+              variant="secondary"
+              lightMode={!state.isDark}
+              onClick={() => {
+                window.location.href = "/settings";
+              }}
+              className="px-3 py-2 text-xs whitespace-nowrap"
+            >
+              {state.t("系统设置", "System Settings")}
+            </Button>
           </div>
         </div>
 
@@ -161,6 +172,11 @@ export function SessionsMobile({ state }: SessionsMobileProps) {
                         {state.t("断开时间", "Disconnected at")}: {new Date(session.disconnected_at).toLocaleString()}
                       </p>
                     ) : null}
+                    {session.enhanced_enabled && session.status !== "active" && session.allow_auto_retry !== false ? (
+                      <p className={`text-xs ${state.isDark ? "text-slate-500" : "text-slate-400"}`}>
+                        {state.t("本轮重试", "Retry cycle")}: {session.retry_cycle_count ?? 0}/{state.enhancedRetryMaxAttempts}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex flex-col gap-2">
                     {session.status === "active" ? (
@@ -183,6 +199,13 @@ export function SessionsMobile({ state }: SessionsMobileProps) {
                       {session.status === "active" ? state.t("断开", "Disconnect") : state.t("删除", "Delete")}
                     </Button>
                   </div>
+                  {state.showSessionStatusSummary && session.status === "active" ? (
+                    <SessionStatusSummary
+                      entry={state.sessionStatusEntries[session.id]}
+                      isDark={state.isDark}
+                      t={state.t}
+                    />
+                  ) : null}
                   <div className="space-y-2">
                     <Input
                       placeholder={state.t("备注", "Note")}
