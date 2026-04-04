@@ -22,8 +22,6 @@ import { useSessionsOrdering } from "./useSessionsOrdering";
 import { useSessionsPolling } from "./useSessionsPolling";
 import { usePasswordDialog } from "./usePasswordDialog";
 
-const SESSION_STATUS_VISIBILITY_KEY = "sessions.showSessionStatusSummary";
-
 export function useSessionsState() {
   const [connections, setConnections] = React.useState<Connection[]>([]);
   const [sessions, setSessions] = React.useState<Session[]>([]);
@@ -41,12 +39,6 @@ export function useSessionsState() {
     key_passphrase: "",
   });
   const [noteDrafts, setNoteDrafts] = React.useState<Record<string, string>>({});
-  const [showSessionStatusSummary, setShowSessionStatusSummary] = React.useState(() => {
-    if (typeof window === "undefined") {
-      return true;
-    }
-    return window.localStorage.getItem(SESSION_STATUS_VISIBILITY_KEY) !== "false";
-  });
   const [showCreateForm, setShowCreateForm] = React.useState(false);
   const [editingConnection, setEditingConnection] = React.useState<Connection | null>(null);
   const [editForm, setEditForm] = React.useState({
@@ -140,15 +132,12 @@ export function useSessionsState() {
     return matchStatus && matchSearch;
   });
   const enhancedRetryMaxAttempts = systemSettings?.enhanced_retry_max_attempts ?? 5;
+  const showSessionStatusSummary = systemSettings?.show_session_status_summary ?? true;
   const sessionStatusEntries = useSessionStatusSummary(
     filteredSessions,
     showSessionStatusSummary,
     (systemSettings?.session_status_refresh_interval_seconds ?? 3) * 1000
   );
-
-  React.useEffect(() => {
-    window.localStorage.setItem(SESSION_STATUS_VISIBILITY_KEY, String(showSessionStatusSummary));
-  }, [showSessionStatusSummary]);
 
   const ordering = useSessionsOrdering({
     orderedSessions,
@@ -486,7 +475,6 @@ export function useSessionsState() {
     setEditForm,
     noteDrafts,
     showSessionStatusSummary,
-    setShowSessionStatusSummary,
     sessionStatusEntries,
     enhancedRetryMaxAttempts,
     handleNoteChange,

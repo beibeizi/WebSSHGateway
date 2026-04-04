@@ -128,6 +128,15 @@ def ensure_session_order_column(database: Database) -> None:
 
 
 def ensure_system_settings(database: Database) -> None:
+    inspector = inspect(database._engine)
+    if "system_settings" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("system_settings")}
+        with database._engine.begin() as connection:
+            if "default_enable_enhanced_session" not in columns:
+                connection.execute(text("ALTER TABLE system_settings ADD COLUMN default_enable_enhanced_session BOOLEAN DEFAULT 0"))
+            if "show_session_status_summary" not in columns:
+                connection.execute(text("ALTER TABLE system_settings ADD COLUMN show_session_status_summary BOOLEAN DEFAULT 1"))
+
     with database.session() as db_session:
         ensure_system_settings_record(db_session)
 

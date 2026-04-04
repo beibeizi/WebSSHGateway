@@ -11,6 +11,7 @@ DEFAULT_ENHANCED_RETRY_MAX_ATTEMPTS = 5
 DEFAULT_ENHANCED_RETRY_SCHEDULE_SECONDS = [2, 4, 8, 16, 32]
 DEFAULT_SESSION_STATUS_REFRESH_INTERVAL_SECONDS = 3
 DEFAULT_ENABLE_ENHANCED_SESSION = False
+DEFAULT_SHOW_SESSION_STATUS_SUMMARY = True
 MAX_ENHANCED_RETRY_ATTEMPTS = 20
 MAX_RETRY_DELAY_SECONDS = 3600
 MAX_SESSION_STATUS_REFRESH_INTERVAL_SECONDS = 60
@@ -22,6 +23,7 @@ class RuntimeSystemSettings:
     enhanced_retry_schedule_seconds: list[int]
     session_status_refresh_interval_seconds: int
     default_enable_enhanced_session: bool
+    show_session_status_summary: bool
 
 
 def default_runtime_system_settings() -> RuntimeSystemSettings:
@@ -30,6 +32,7 @@ def default_runtime_system_settings() -> RuntimeSystemSettings:
         enhanced_retry_schedule_seconds=[*DEFAULT_ENHANCED_RETRY_SCHEDULE_SECONDS],
         session_status_refresh_interval_seconds=DEFAULT_SESSION_STATUS_REFRESH_INTERVAL_SECONDS,
         default_enable_enhanced_session=DEFAULT_ENABLE_ENHANCED_SESSION,
+        show_session_status_summary=DEFAULT_SHOW_SESSION_STATUS_SUMMARY,
     )
 
 
@@ -80,6 +83,15 @@ def parse_retry_schedule(raw_value: str | None) -> list[int]:
         return [*DEFAULT_ENHANCED_RETRY_SCHEDULE_SECONDS]
 
 
+def normalize_retry_schedule_seconds(attempts: int, schedule_seconds: list[int]) -> list[int]:
+    normalized_schedule = sanitize_retry_schedule_seconds(schedule_seconds)
+    if len(normalized_schedule) >= attempts:
+        return normalized_schedule[:attempts]
+
+    fill_value = normalized_schedule[-1]
+    return normalized_schedule + [fill_value] * (attempts - len(normalized_schedule))
+
+
 def serialize_retry_schedule(values: list[int]) -> str:
     return ",".join(str(value) for value in sanitize_retry_schedule_seconds(values))
 
@@ -102,6 +114,7 @@ def ensure_system_settings_record(db: Session) -> SystemSetting:
         enhanced_retry_schedule=serialize_retry_schedule(DEFAULT_ENHANCED_RETRY_SCHEDULE_SECONDS),
         session_status_refresh_interval_seconds=DEFAULT_SESSION_STATUS_REFRESH_INTERVAL_SECONDS,
         default_enable_enhanced_session=DEFAULT_ENABLE_ENHANCED_SESSION,
+        show_session_status_summary=DEFAULT_SHOW_SESSION_STATUS_SUMMARY,
     )
     db.add(record)
     db.flush()
@@ -116,7 +129,10 @@ def load_runtime_system_settings(db: Session) -> RuntimeSystemSettings:
     except ValueError:
         enhanced_retry_max_attempts = DEFAULT_ENHANCED_RETRY_MAX_ATTEMPTS
 
-    schedule_seconds = parse_retry_schedule(record.enhanced_retry_schedule)
+    schedule_seconds = normalize_retry_schedule_seconds(
+        enhanced_retry_max_attempts,
+        parse_retry_schedule(record.enhanced_retry_schedule),
+    )
 
     try:
         session_status_refresh_interval_seconds = sanitize_session_status_refresh_interval_seconds(
@@ -130,4 +146,9 @@ def load_runtime_system_settings(db: Session) -> RuntimeSystemSettings:
         enhanced_retry_schedule_seconds=schedule_seconds,
         session_status_refresh_interval_seconds=session_status_refresh_interval_seconds,
         default_enable_enhanced_session=bool(record.default_enable_enhanced_session),
+        show_session_status_summary=(
+            DEFAULT_SHOW_SESSION_STATUS_SUMMARY
+            if record.show_session_status_summary is None
+            else bool(record.show_session_status_summary)
+        ),
     )

@@ -6,7 +6,6 @@ import type { SessionsState } from "./useSessionsState";
 import { SessionsConnectionsPanel } from "./SessionsConnectionsPanel";
 import { SessionsDialogs } from "./SessionsDialogs";
 import { SessionStatusSummary } from "./SessionStatusSummary";
-import { SessionStatusToggle } from "./SessionStatusToggle";
 import { clearAuthStorage } from "../../lib/api";
 
 type SessionsDesktopProps = {
@@ -105,12 +104,6 @@ export function SessionsDesktop({ state }: SessionsDesktopProps) {
                     {item.label}
                   </Button>
                 ))}
-                <SessionStatusToggle
-                  checked={state.showSessionStatusSummary}
-                  onChange={() => state.setShowSessionStatusSummary((prev: boolean) => !prev)}
-                  isDark={state.isDark}
-                  label={state.t("系统状态", "System Status")}
-                />
                 <Button
                   variant="secondary"
                   lightMode={!state.isDark}

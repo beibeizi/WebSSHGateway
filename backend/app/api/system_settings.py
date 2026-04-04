@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.api.dependencies import get_current_user, get_db
 from app.services.system_settings import (
@@ -22,6 +22,7 @@ class SystemSettingsResponse(BaseModel):
     enhanced_retry_schedule_seconds: list[int]
     session_status_refresh_interval_seconds: int
     default_enable_enhanced_session: bool
+    show_session_status_summary: bool
 
 
 class SystemSettingsUpdateRequest(BaseModel):
@@ -29,6 +30,7 @@ class SystemSettingsUpdateRequest(BaseModel):
     enhanced_retry_schedule_seconds: list[int] = Field(default_factory=list, min_length=1)
     session_status_refresh_interval_seconds: int = Field(..., ge=1)
     default_enable_enhanced_session: bool
+    show_session_status_summary: bool
 
     @field_validator("enhanced_retry_max_attempts")
     @classmethod
@@ -45,6 +47,12 @@ class SystemSettingsUpdateRequest(BaseModel):
     def _validate_refresh_interval(cls, value: int) -> int:
         return sanitize_session_status_refresh_interval_seconds(value)
 
+    @model_validator(mode="after")
+    def _validate_retry_policy(self) -> "SystemSettingsUpdateRequest":
+        if len(self.enhanced_retry_schedule_seconds) != self.enhanced_retry_max_attempts:
+            raise ValueError("增强会话自动重试间隔数量必须与自动重试次数一致")
+        return self
+
 
 def _build_response(db) -> SystemSettingsResponse:
     settings = load_runtime_system_settings(db)
@@ -53,6 +61,7 @@ def _build_response(db) -> SystemSettingsResponse:
         enhanced_retry_schedule_seconds=settings.enhanced_retry_schedule_seconds,
         session_status_refresh_interval_seconds=settings.session_status_refresh_interval_seconds,
         default_enable_enhanced_session=settings.default_enable_enhanced_session,
+        show_session_status_summary=settings.show_session_status_summary,
     )
 
 
@@ -75,4 +84,5 @@ def update_system_settings(
     record.enhanced_retry_schedule = serialize_retry_schedule(payload.enhanced_retry_schedule_seconds)
     record.session_status_refresh_interval_seconds = payload.session_status_refresh_interval_seconds
     record.default_enable_enhanced_session = payload.default_enable_enhanced_session
+    record.show_session_status_summary = payload.show_session_status_summary
     return _build_response(db)

@@ -601,6 +601,7 @@ export type GlobalSystemSettings = {
   enhanced_retry_schedule_seconds: number[];
   session_status_refresh_interval_seconds: number;
   default_enable_enhanced_session: boolean;
+  show_session_status_summary: boolean;
 };
 
 export async function getSystemStats(sessionId: string): Promise<SystemStats> {
