@@ -126,11 +126,14 @@ export function useSessionsState() {
     });
   }, [sessions]);
 
-  const filteredSessions = orderedSessions.filter((session) => {
-    const matchStatus = filter === "all" || session.status === filter;
-    const matchSearch = (session.name || "").toLowerCase().includes(search.toLowerCase());
-    return matchStatus && matchSearch;
-  });
+  const filteredSessions = React.useMemo(() => {
+    const normalizedSearch = search.toLowerCase();
+    return orderedSessions.filter((session) => {
+      const matchStatus = filter === "all" || session.status === filter;
+      const matchSearch = (session.name || "").toLowerCase().includes(normalizedSearch);
+      return matchStatus && matchSearch;
+    });
+  }, [filter, orderedSessions, search]);
   const enhancedRetryMaxAttempts = systemSettings?.enhanced_retry_max_attempts ?? 5;
   const showSessionStatusSummary = systemSettings?.show_session_status_summary ?? true;
   const sessionStatusEntries = useSessionStatusSummary(

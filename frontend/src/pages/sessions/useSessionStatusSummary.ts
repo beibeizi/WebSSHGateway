@@ -33,6 +33,9 @@ export function useSessionStatusSummary(visibleSessions: Session[], enabled: boo
     () => visibleSessions.filter((session) => session.status === "active").map((session) => session.id),
     [visibleSessions]
   );
+  // 仅当活跃会话集合真正变化时，才重建轮询依赖，避免每次渲染都让请求结果失效。
+  const activeSessionIdsKey = React.useMemo(() => activeSessionIds.join("|"), [activeSessionIds]);
+  const stableActiveSessionIds = React.useMemo(() => activeSessionIds, [activeSessionIdsKey]);
   const [statusEntries, setStatusEntries] = React.useState<Record<string, SessionStatusEntry>>({});
   const inFlightRef = React.useRef(false);
   const mountedRef = React.useRef(true);
@@ -46,30 +49,30 @@ export function useSessionStatusSummary(visibleSessions: Session[], enabled: boo
 
   React.useEffect(() => {
     versionRef.current += 1;
-  }, [activeSessionIds, enabled]);
+  }, [activeSessionIdsKey, enabled]);
 
   React.useEffect(() => {
     setStatusEntries((prev) => {
       const next: Record<string, SessionStatusEntry> = {};
-      activeSessionIds.forEach((sessionId) => {
+      stableActiveSessionIds.forEach((sessionId) => {
         if (prev[sessionId]) {
           next[sessionId] = prev[sessionId];
         }
       });
       return next;
     });
-    if (activeSessionIds.length === 0) {
+    if (stableActiveSessionIds.length === 0) {
       inFlightRef.current = false;
     }
-  }, [activeSessionIds]);
+  }, [stableActiveSessionIds]);
 
   const fetchStatuses = React.useCallback(async () => {
-    if (!enabled || activeSessionIds.length === 0 || inFlightRef.current) {
+    if (!enabled || stableActiveSessionIds.length === 0 || inFlightRef.current) {
       return;
     }
 
     inFlightRef.current = true;
-    const currentIds = [...activeSessionIds];
+    const currentIds = [...stableActiveSessionIds];
     const currentVersion = versionRef.current;
 
     setStatusEntries((prev) => {
@@ -116,7 +119,7 @@ export function useSessionStatusSummary(visibleSessions: Session[], enabled: boo
     } finally {
       inFlightRef.current = false;
     }
-  }, [activeSessionIds, enabled]);
+  }, [enabled, stableActiveSessionIds]);
 
   React.useEffect(() => {
     if (!enabled) {
