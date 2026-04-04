@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import update
 from starlette.responses import JSONResponse, Response
 
-from app.api import auth, connections, health, sessions, system, ws_sessions
+from app.api import auth, connections, health, session_status, sessions, system, ws_sessions
 from app.api.dependencies import AppState, get_state
 from app.api.middleware import RequestLoggingMiddleware
 from app.core.db import utc_now
@@ -127,6 +127,7 @@ def create_app() -> FastAPI:
     app.include_router(ws_sessions.router)
     app.include_router(health.router)
     app.include_router(system.router)
+    app.include_router(session_status.router)
 
     static_dir = Path(__file__).resolve().parent.parent / "frontend" / "dist"
     if static_dir.exists():

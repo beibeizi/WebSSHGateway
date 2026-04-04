@@ -591,6 +591,11 @@ export type SystemOverview = {
   disks: DiskList;
 };
 
+export type SessionStatusSummary = {
+  stats: SystemStats;
+  network: NetworkInfo;
+};
+
 export async function getSystemStats(sessionId: string): Promise<SystemStats> {
   const response = await fetch(`${HTTP_BASE}/system/stats/${sessionId}`, {
     headers: { ...getAuthHeader() }
@@ -619,6 +624,17 @@ export async function getProcessList(sessionId: string): Promise<ProcessList> {
   });
   if (!response.ok) {
     const detail = await safeError(response, "获取进程列表失败");
+    throw new Error(detail);
+  }
+  return response.json();
+}
+
+export async function getSessionStatusSummary(sessionId: string): Promise<SessionStatusSummary> {
+  const response = await fetch(`${HTTP_BASE}/system/session-status/${sessionId}`, {
+    headers: { ...getAuthHeader() }
+  });
+  if (!response.ok) {
+    const detail = await safeError(response, "获取会话系统状态失败");
     throw new Error(detail);
   }
   return response.json();

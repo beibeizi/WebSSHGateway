@@ -17,9 +17,12 @@ import {
   updateSessionNote,
 } from "../../lib/api";
 import { localizeText, normalizeTargetProfile, pickWorseProfile } from "./sessionsUtils";
+import { useSessionStatusSummary } from "./useSessionStatusSummary";
 import { useSessionsOrdering } from "./useSessionsOrdering";
 import { useSessionsPolling } from "./useSessionsPolling";
 import { usePasswordDialog } from "./usePasswordDialog";
+
+const SESSION_STATUS_VISIBILITY_KEY = "sessions.showSessionStatusSummary";
 
 export function useSessionsState() {
   const [connections, setConnections] = React.useState<Connection[]>([]);
@@ -38,6 +41,12 @@ export function useSessionsState() {
     key_passphrase: "",
   });
   const [noteDrafts, setNoteDrafts] = React.useState<Record<string, string>>({});
+  const [showSessionStatusSummary, setShowSessionStatusSummary] = React.useState(() => {
+    if (typeof window === "undefined") {
+      return true;
+    }
+    return window.localStorage.getItem(SESSION_STATUS_VISIBILITY_KEY) !== "false";
+  });
   const [showCreateForm, setShowCreateForm] = React.useState(false);
   const [editingConnection, setEditingConnection] = React.useState<Connection | null>(null);
   const [editForm, setEditForm] = React.useState({
@@ -130,6 +139,11 @@ export function useSessionsState() {
     const matchSearch = (session.name || "").toLowerCase().includes(search.toLowerCase());
     return matchStatus && matchSearch;
   });
+  const sessionStatusEntries = useSessionStatusSummary(filteredSessions, showSessionStatusSummary);
+
+  React.useEffect(() => {
+    window.localStorage.setItem(SESSION_STATUS_VISIBILITY_KEY, String(showSessionStatusSummary));
+  }, [showSessionStatusSummary]);
 
   const ordering = useSessionsOrdering({
     orderedSessions,
@@ -461,6 +475,9 @@ export function useSessionsState() {
     editForm,
     setEditForm,
     noteDrafts,
+    showSessionStatusSummary,
+    setShowSessionStatusSummary,
+    sessionStatusEntries,
     handleNoteChange,
     handleSaveNote,
     deleteConfirm,
