@@ -10,6 +10,7 @@ import os
 class AppConfig:
     secret_keys: list[bytes]
     database_url: str
+    initial_admin_password: str | None
     jwt_issuer: str
     jwt_access_ttl: timedelta
     jwt_remember_ttl: timedelta
@@ -35,6 +36,7 @@ def load_config() -> AppConfig:
         raise RuntimeError("SECRET_KEY must be 16/24/32 bytes; suggest using 32 chars")
 
     database_url = os.getenv("DATABASE_URL", "sqlite:////data/app.db")
+    initial_admin_password = os.getenv("INITIAL_ADMIN_PASSWORD") or None
     jwt_issuer = os.getenv("JWT_ISSUER", "webssh-gateway")
     jwt_access_ttl = timedelta(hours=int(os.getenv("JWT_ACCESS_TTL_HOURS", "12")))
     jwt_remember_ttl = timedelta(days=int(os.getenv("JWT_REMEMBER_TTL_DAYS", "7")))
@@ -55,6 +57,7 @@ def load_config() -> AppConfig:
     return AppConfig(
         secret_keys=secret_keys,
         database_url=database_url,
+        initial_admin_password=initial_admin_password,
         jwt_issuer=jwt_issuer,
         jwt_access_ttl=jwt_access_ttl,
         jwt_remember_ttl=jwt_remember_ttl,

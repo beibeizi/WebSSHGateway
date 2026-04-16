@@ -45,6 +45,10 @@ _MESSAGE_CATALOG: dict[str, dict[str, str]] = {
         "zh": "校验码错误或已过期",
         "en": "Verification code is invalid or expired",
     },
+    "password_reset_cli_required": {
+        "zh": "Web 端不支持重置密码，请联系管理员使用 CLI 重置密码",
+        "en": "Password reset is not available on the web. Please contact an administrator to use the CLI reset command.",
+    },
     "connection_not_found": {
         "zh": "连接不存在",
         "en": "Connection not found",

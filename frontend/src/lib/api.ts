@@ -11,6 +11,10 @@ const CLIENT_TEXT_MAP: Record<string, { zh: string; en: string }> = {
   "用户名或密码错误": { zh: "用户名或密码错误", en: "Invalid username or password" },
   "用户不存在": { zh: "用户不存在", en: "User not found" },
   "校验码错误或已过期": { zh: "校验码错误或已过期", en: "Verification code is invalid or expired" },
+  "Web 端不支持重置密码，请联系管理员使用 CLI 重置密码": {
+    zh: "Web 端不支持重置密码，请联系管理员使用 CLI 重置密码",
+    en: "Password reset is not available on the web. Please contact an administrator to use the CLI reset command."
+  },
   "修改失败": { zh: "修改失败", en: "Update failed" },
   "发送重置校验码失败": { zh: "发送重置校验码失败", en: "Failed to send password reset verification code" },
   "重置密码失败": { zh: "重置密码失败", en: "Failed to reset password" },
@@ -211,41 +215,6 @@ async function safeError(response: Response, fallback: string, handleAuth: boole
     // ignore parse failures
   }
   return localizedFallback;
-}
-
-// 统一的请求处理函数
-async function request<T>(
-  url: string,
-  options: RequestInit = {},
-  errorMessage: string = "请求失败"
-): Promise<T> {
-  try {
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        ...getLanguageHeader(),
-        ...getAuthHeader(),
-        ...options.headers,
-      },
-    });
-    if (!response.ok) {
-      const detail = await safeError(response, errorMessage);
-      throw new BusinessError(detail);
-    }
-    const contentType = response.headers.get("content-type");
-    if (contentType?.includes("application/json")) {
-      return response.json();
-    }
-    return undefined as T;
-  } catch (error) {
-    if (error instanceof AuthError || error instanceof BusinessError) {
-      throw error;
-    }
-    if (error instanceof TypeError && error.message.includes("fetch")) {
-      throw new NetworkError();
-    }
-    throw new NetworkError(localizeClientText("请求失败，请稍后重试"));
-  }
 }
 
 function getAuthHeader(): Record<string, string> {

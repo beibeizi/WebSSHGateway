@@ -46,7 +46,7 @@ WebSSH Gateway 是一个面向运维和开发场景的浏览器 SSH 网关。你
 
 ## 快速开始
 
-> 重要安全提示：部署前务必修改 `.env` 中的 `SECRET_KEY`（不要使用示例值或弱口令），否则会显著降低会话与鉴权安全性。
+> 重要安全提示：部署前务必修改 `.env` 中的 `SECRET_KEY` 与 `INITIAL_ADMIN_PASSWORD`（不要使用示例值或弱口令），否则会显著降低会话与鉴权安全性，并导致首次管理员初始化失败。
 
 ### 方式 1：本地开发部署
 
@@ -56,10 +56,13 @@ WebSSH Gateway 是一个面向运维和开发场景的浏览器 SSH 网关。你
 
 Docker Hub 镜像：`https://hub.docker.com/r/beibeizi/websshgateway`
 
-快速启动示例（注意：`SECRET_KEY` 仅为示例，自行部署必须替换，32 位 UUID 即可）：
+快速启动示例（注意：`SECRET_KEY` 与 `INITIAL_ADMIN_PASSWORD` 仅为示例，自行部署必须替换）：
 
 ```bash
-docker run -d -p 8080:8080 -e SECRET_KEY="67e457b4eab14012b34382b3d634f297" beibeizi/websshgateway:latest
+docker run -d -p 8080:8080 \
+  -e SECRET_KEY="67e457b4eab14012b34382b3d634f297" \
+  -e INITIAL_ADMIN_PASSWORD="ChangeMe123" \
+  beibeizi/websshgateway:latest
 ```
 
 ```bash

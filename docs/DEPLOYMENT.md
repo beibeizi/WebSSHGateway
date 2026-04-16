@@ -20,12 +20,13 @@ cp .env.example .env
 关键变量说明：
 
 - `SECRET_KEY`：必须为 16/24/32 字节长度，建议 32 字符。务必修改为你自己的高强度随机值，不可使用示例值。
+- `INITIAL_ADMIN_PASSWORD`：首次建库时用于初始化 `admin` 账号密码。必须满足密码复杂度要求，且首次登录后会强制修改。
 - `DATABASE_URL`：默认 `sqlite:////data/app.db`。
 - `SSH_KNOWN_HOSTS`：已知主机文件路径。
 - `SSH_ALLOW_UNKNOWN_HOSTS`：是否允许未知主机。
 - `VITE_API_BASE`：前端开发模式下 API 地址。
 
-安全提示：上线前请再次确认 `SECRET_KEY` 已替换，否则会导致鉴权令牌与会话安全风险。
+安全提示：上线前请再次确认 `SECRET_KEY` 与 `INITIAL_ADMIN_PASSWORD` 均已替换，否则会导致鉴权安全风险，且服务首次启动时无法完成管理员初始化。
 
 ## 3. 本地开发部署
 
@@ -82,10 +83,13 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080
 
 Docker Hub 镜像：`https://hub.docker.com/r/beibeizi/websshgateway`
 
-快速启动示例（注意：`SECRET_KEY` 仅为示例，自行部署必须替换，32 位 UUID 即可）：
+快速启动示例（注意：`SECRET_KEY` 与 `INITIAL_ADMIN_PASSWORD` 均为示例，自行部署必须替换）：
 
 ```bash
-docker run -d -p 8080:8080 -e SECRET_KEY="67e457b4eab14012b34382b3d634f297" beibeizi/websshgateway:latest
+docker run -d -p 8080:8080 \
+  -e SECRET_KEY="67e457b4eab14012b34382b3d634f297" \
+  -e INITIAL_ADMIN_PASSWORD="ChangeMe123" \
+  beibeizi/websshgateway:latest
 ```
 
 ### 4.1 单容器部署
@@ -119,8 +123,9 @@ docker compose down
 ## 5. 首次登录
 
 - 默认初始化账号：`admin`
-- 初始密码会在后端启动日志打印一次（首次建库时）
+- 初始密码来自 `.env` 中的 `INITIAL_ADMIN_PASSWORD`
 - 首次登录后会强制修改密码
+- 若需为现有用户重置密码，请在项目后端目录执行：`cd backend && python -m app.cli reset-password --username <用户名>`
 
 ## 6. 升级与回滚建议
 
@@ -143,6 +148,6 @@ docker run --rm \
 
 ## 7. 常见问题
 
-- 无法登录：检查 `SECRET_KEY` 长度是否满足 16/24/32 字节。
+- 无法登录：检查 `SECRET_KEY` 长度是否满足 16/24/32 字节，并确认首次部署时已设置 `INITIAL_ADMIN_PASSWORD`。
 - SSH 连接失败：确认目标主机可达、账号凭据正确、主机 key 策略配置正确。
 - 前端请求 401：检查 token 是否过期，或 `VITE_API_BASE` 是否指向正确后端。
