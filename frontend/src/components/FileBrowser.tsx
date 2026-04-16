@@ -128,7 +128,6 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
   const [error, setError] = React.useState<string | null>(null);
   const [compress, setCompress] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
-  const [selectedFile, setSelectedFile] = React.useState<FileInfo | null>(null);
   const [selectedFiles, setSelectedFiles] = React.useState<Set<string>>(new Set());
   const [downloading, setDownloading] = React.useState(false);
   const [downloadStats, setDownloadStats] = React.useState<DownloadStats | null>(null);
@@ -916,15 +915,6 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
       setIsDragging(false);
     }
   }, []);
-
-  // 处理下载
-  const handleDownload = React.useCallback(async () => {
-    if (selectedFiles.size === 0) return;
-    const filesToDownload = Array.from(selectedFiles)
-      .map(path => files.find(f => f.path === path))
-      .filter(Boolean) as FileInfo[];
-    await downloadItemsWithProgress(filesToDownload);
-  }, [selectedFiles, files, downloadItemsWithProgress]);
 
   // 列宽调整
   React.useEffect(() => {

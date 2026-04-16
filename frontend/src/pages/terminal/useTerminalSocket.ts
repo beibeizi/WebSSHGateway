@@ -139,7 +139,7 @@ export function useTerminalSocket({
 
         // 检测目录变化：解析提示符中的路径
         const text = output.replace(/\x1b\[[0-9;]*m/g, "");
-        const promptMatch = text.match(/:([\/][^\s$#]+)[\s$#]/);
+        const promptMatch = text.match(/:([/][^\s$#]+)[\s$#]/);
         if (promptMatch && promptMatch[1] && !promptMatch[1].startsWith("//")) {
           setCurrentDir(promptMatch[1]);
         }

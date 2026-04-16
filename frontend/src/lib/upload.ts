@@ -82,8 +82,9 @@ const readDirectory = async (entry: LegacyFileSystemEntry, path = ""): Promise<D
   }
 
   const reader = entry.createReader();
-  while (true) {
-    const batch = await new Promise<LegacyFileSystemEntry[]>((resolve) => {
+  let batch: LegacyFileSystemEntry[] = [];
+  do {
+    batch = await new Promise<LegacyFileSystemEntry[]>((resolve) => {
       reader.readEntries(resolve, () => resolve([]));
     });
 
@@ -96,7 +97,7 @@ const readDirectory = async (entry: LegacyFileSystemEntry, path = ""): Promise<D
       const subResults = await readDirectory(subEntry, subPath);
       results.push(...subResults);
     }
-  }
+  } while (batch.length > 0);
 
   return results;
 };
