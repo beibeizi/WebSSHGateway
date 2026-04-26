@@ -61,6 +61,18 @@ def ensure_connection_arch_columns(database: Database) -> None:
             connection.execute(text("ALTER TABLE connections ADD COLUMN remote_os VARCHAR(64)"))
         if "enhance_prompt_shown" not in columns:
             connection.execute(text("ALTER TABLE connections ADD COLUMN enhance_prompt_shown BOOLEAN DEFAULT 0"))
+        if "remote_probe_status" not in columns:
+            connection.execute(text("ALTER TABLE connections ADD COLUMN remote_probe_status VARCHAR(32) DEFAULT 'unverified'"))
+        if "remote_probe_error" not in columns:
+            connection.execute(text("ALTER TABLE connections ADD COLUMN remote_probe_error VARCHAR(512)"))
+        if "remote_probe_checked_at" not in columns:
+            connection.execute(text("ALTER TABLE connections ADD COLUMN remote_probe_checked_at DATETIME"))
+        if "remote_probe_version" not in columns:
+            connection.execute(text("ALTER TABLE connections ADD COLUMN remote_probe_version INTEGER DEFAULT 0"))
+        if "enhanced_supported" not in columns:
+            connection.execute(text("ALTER TABLE connections ADD COLUMN enhanced_supported BOOLEAN DEFAULT 0"))
+        if "enhanced_probe_error" not in columns:
+            connection.execute(text("ALTER TABLE connections ADD COLUMN enhanced_probe_error VARCHAR(512)"))
 
 
 def ensure_session_enhanced_columns(database: Database) -> None:

@@ -8,6 +8,30 @@ type SessionsConnectionsPanelProps = {
   state: SessionsState;
 };
 
+function getProbeStatusLabel(state: SessionsState, status?: string) {
+  if (status === "verifying") return state.t("验证中", "Verifying");
+  if (status === "verified") return state.t("已验证", "Verified");
+  if (status === "failed") return state.t("验证失败", "Verification failed");
+  if (status === "stale") return state.t("可能已过期", "May be stale");
+  return state.t("未验证", "Unverified");
+}
+
+function getProbeStatusClass(state: SessionsState, status?: string) {
+  if (status === "verified") {
+    return state.isDark ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-200" : "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+  if (status === "failed") {
+    return state.isDark ? "border-rose-400/40 bg-rose-500/10 text-rose-200" : "border-rose-200 bg-rose-50 text-rose-700";
+  }
+  if (status === "stale") {
+    return state.isDark ? "border-amber-400/40 bg-amber-500/10 text-amber-200" : "border-amber-200 bg-amber-50 text-amber-700";
+  }
+  if (status === "verifying") {
+    return state.isDark ? "border-sky-400/40 bg-sky-500/10 text-sky-200" : "border-sky-200 bg-sky-50 text-sky-700";
+  }
+  return state.isDark ? "border-slate-600 bg-slate-800 text-slate-300" : "border-slate-200 bg-slate-100 text-slate-600";
+}
+
 export function SessionsConnectionsPanel({ state }: SessionsConnectionsPanelProps) {
   return (
     <Card
@@ -208,8 +232,39 @@ export function SessionsConnectionsPanel({ state }: SessionsConnectionsPanelProp
                   <p className={`text-xs ${state.isDark ? "text-slate-500" : "text-slate-400"}`}>
                     {state.t("创建", "Created")}: {new Date(conn.created_at).toLocaleString()} | {state.t("更新", "Updated")}: {new Date(conn.updated_at).toLocaleString()}
                   </p>
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${getProbeStatusClass(state, conn.remote_probe_status)}`}>
+                      {getProbeStatusLabel(state, conn.remote_probe_status)}
+                    </span>
+                    {conn.remote_probe_status === "verified" && conn.remote_arch && conn.remote_os ? (
+                      <span className={`text-xs ${state.isDark ? "text-slate-400" : "text-slate-500"}`}>
+                        {conn.remote_os} {conn.remote_arch}
+                        {conn.enhanced_supported ? ` · ${state.t("支持增强", "Enhanced supported")}` : ""}
+                      </span>
+                    ) : null}
+                    {conn.remote_probe_status === "failed" && conn.remote_probe_error ? (
+                      <button
+                        type="button"
+                        className={`inline-flex h-5 w-5 items-center justify-center rounded-full border text-xs font-bold ${state.isDark ? "border-rose-400/50 text-rose-200" : "border-rose-300 text-rose-700"}`}
+                        title={conn.remote_probe_error}
+                        onClick={() => state.push(conn.remote_probe_error || state.t("验证失败", "Verification failed"))}
+                      >
+                        ?
+                      </button>
+                    ) : null}
+                  </div>
+                  {conn.remote_probe_status === "failed" && conn.remote_probe_error ? (
+                    <p className={`text-xs ${state.isDark ? "text-rose-200" : "text-rose-700"}`}>
+                      {conn.remote_probe_error}
+                    </p>
+                  ) : null}
+                  {conn.remote_probe_checked_at ? (
+                    <p className={`text-xs ${state.isDark ? "text-slate-500" : "text-slate-400"}`}>
+                      {state.t("最近验证", "Last verified")}: {new Date(conn.remote_probe_checked_at).toLocaleString()}
+                    </p>
+                  ) : null}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button
                     variant="secondary"
                     lightMode={!state.isDark}
@@ -218,6 +273,24 @@ export function SessionsConnectionsPanel({ state }: SessionsConnectionsPanelProp
                     onClick={() => state.handleCreateSession(conn.id)}
                   >
                     {state.t("创建新的连接", "Create new connection")}
+                  </Button>
+                  {conn.remote_probe_status === "failed" || conn.remote_probe_status === "stale" || conn.remote_probe_status === "verifying" ? (
+                    <Button
+                      variant="ghost"
+                      lightMode={!state.isDark}
+                      disabled={state.connectingId !== null}
+                      onClick={() => state.handleCreateSession(conn.id, { force: true })}
+                    >
+                      {state.t("强制尝试", "Force")}
+                    </Button>
+                  ) : null}
+                  <Button
+                    variant="ghost"
+                    lightMode={!state.isDark}
+                    loading={Boolean(state.verifyingConnectionIds[conn.id])}
+                    onClick={() => state.handleVerifyConnection(conn.id)}
+                  >
+                    {state.t("重新验证", "Verify")}
                   </Button>
                   <Button variant="ghost" lightMode={!state.isDark} onClick={() => state.handleEditConnection(conn)}>
                     {state.t("编辑", "Edit")}

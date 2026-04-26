@@ -15,12 +15,15 @@ import {
   retrySession,
   updateConnection,
   updateSessionNote,
+  verifyConnection,
 } from "../../lib/api";
 import { localizeText, normalizeTargetProfile, pickWorseProfile } from "./sessionsUtils";
 import { useSessionStatusSummary } from "./useSessionStatusSummary";
 import { useSessionsOrdering } from "./useSessionsOrdering";
 import { useSessionsPolling } from "./useSessionsPolling";
 import { usePasswordDialog } from "./usePasswordDialog";
+
+const SESSION_CREATE_TIMEOUT_MS = 30000;
 
 export function useSessionsState() {
   const [connections, setConnections] = React.useState<Connection[]>([]);
@@ -58,6 +61,7 @@ export function useSessionsState() {
   } | null>(null);
   const [deleteLoading, setDeleteLoading] = React.useState(false);
   const [connectingId, setConnectingId] = React.useState<number | null>(null);
+  const [verifyingConnectionIds, setVerifyingConnectionIds] = React.useState<Record<number, boolean>>({});
   const [retryingSessionIds, setRetryingSessionIds] = React.useState<Record<string, boolean>>({});
   const [enhancePrompt, setEnhancePrompt] = React.useState<{
     open: boolean;
@@ -113,6 +117,27 @@ export function useSessionsState() {
   React.useEffect(() => {
     sessionsRef.current = sessions;
   }, [sessions]);
+
+  React.useEffect(() => {
+    if (!connections.some((connection) => connection.remote_probe_status === "verifying")) {
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setInterval(async () => {
+      try {
+        const connectionList = await listConnections();
+        if (!cancelled) {
+          setConnections(connectionList);
+        }
+      } catch {
+        // 连接验证状态刷新失败时保持当前列表，避免打断用户操作。
+      }
+    }, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [connections]);
 
   const orderedSessions = React.useMemo(() => {
     const normalizeOrder = (value?: number) => (value && value > 0 ? value : Number.MAX_SAFE_INTEGER);
@@ -262,10 +287,25 @@ export function useSessionsState() {
     await loadData();
   };
 
-  const handleCreateSession = async (connectionId: number) => {
+  const handleCreateSession = async (connectionId: number, options?: { force?: boolean }) => {
+    const connection = connections.find((item) => item.id === connectionId);
+    if (!options?.force && connection) {
+      if (connection.remote_probe_status === "verifying") {
+        push(t("目标机器仍在验证中，请稍后重试，或使用强制尝试", "Target verification is still running. Try again later or use force attempt."));
+        return;
+      }
+      if (connection.remote_probe_status === "failed") {
+        push(connection.remote_probe_error || t("目标机器验证失败，请先查看失败原因", "Target verification failed. Check the failure reason first."));
+        return;
+      }
+      if (connection.remote_probe_status === "stale") {
+        push(t("目标机器信息可能已变化，请重新验证后再创建会话", "Target info may have changed. Verify again before creating a session."));
+        return;
+      }
+    }
     setConnectingId(connectionId);
     const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), 10000);
+    const timeoutId = window.setTimeout(() => controller.abort(), SESSION_CREATE_TIMEOUT_MS);
 
     try {
       const effectiveSystemSettings = systemSettings ?? await refreshSystemSettings();
@@ -290,7 +330,7 @@ export function useSessionsState() {
       await createSessionWithOption(connectionId, controller.signal, false);
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
-        push(t("连接超时，请检查与目标机器网络是否通畅", "Connection timeout. Please verify network reachability to the target host."));
+        push(t("创建会话耗时较长，后台可能仍在处理中，请稍后查看会话列表", "Session creation is taking longer than expected. It may still be running in the background; check the session list shortly."));
       } else {
         push(error instanceof Error ? error.message : t("启动失败", "Start failed"));
       }
@@ -308,13 +348,13 @@ export function useSessionsState() {
     setEnhancePrompt(null);
     setConnectingId(connectionId);
     const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), 10000);
+    const timeoutId = window.setTimeout(() => controller.abort(), SESSION_CREATE_TIMEOUT_MS);
 
     try {
       await createSessionWithOption(connectionId, controller.signal, checked);
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
-        push(t("连接超时，请检查与目标机器网络是否通畅", "Connection timeout. Please verify network reachability to the target host."));
+        push(t("创建会话耗时较长，后台可能仍在处理中，请稍后查看会话列表", "Session creation is taking longer than expected. It may still be running in the background; check the session list shortly."));
       } else {
         push(error instanceof Error ? error.message : t("启动失败", "Start failed"));
       }
@@ -389,6 +429,26 @@ export function useSessionsState() {
     }
   };
 
+  const handleVerifyConnection = async (connectionId: number) => {
+    if (verifyingConnectionIds[connectionId]) {
+      return;
+    }
+    setVerifyingConnectionIds((prev) => ({ ...prev, [connectionId]: true }));
+    try {
+      await verifyConnection(connectionId);
+      push(t("连接验证已开始", "Connection verification started"));
+      await loadData();
+    } catch (error) {
+      push(error instanceof Error ? error.message : t("验证失败", "Verification failed"));
+    } finally {
+      setVerifyingConnectionIds((prev) => {
+        const next = { ...prev };
+        delete next[connectionId];
+        return next;
+      });
+    }
+  };
+
   const confirmDelete = () => {
     if (!deleteConfirm) return;
     if (deleteConfirm.type === "session") {
@@ -459,6 +519,7 @@ export function useSessionsState() {
     toggleLanguage,
     language,
     t,
+    push,
     connections,
     sessions,
     orderedSessions,
@@ -491,7 +552,9 @@ export function useSessionsState() {
     handleUpdateConnection,
     handleEditConnection,
     handleCreateSession,
+    handleVerifyConnection,
     connectingId,
+    verifyingConnectionIds,
     handleRetryEnhancedSession,
     retryingSessionIds,
     handleDisconnectOrDelete,

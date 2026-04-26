@@ -30,6 +30,7 @@ const CLIENT_TEXT_MAP: Record<string, { zh: string; en: string }> = {
   "删除会话失败": { zh: "删除会话失败", en: "Failed to delete session" },
   "删除连接失败": { zh: "删除连接失败", en: "Failed to delete connection" },
   "更新连接失败": { zh: "更新连接失败", en: "Failed to update connection" },
+  "验证连接失败": { zh: "验证连接失败", en: "Failed to verify connection" },
   "获取会话失败": { zh: "获取会话失败", en: "Failed to get session" },
   "获取系统状态失败": { zh: "获取系统状态失败", en: "Failed to get system stats" },
   "获取系统日志失败": { zh: "获取系统日志失败", en: "Failed to get system logs" },
@@ -155,6 +156,13 @@ export type Connection = {
   port: number;
   username: string;
   auth_type: string;
+  remote_arch?: string | null;
+  remote_os?: string | null;
+  remote_probe_status?: "unverified" | "verifying" | "verified" | "failed" | "stale";
+  remote_probe_error?: string | null;
+  remote_probe_checked_at?: string | null;
+  enhanced_supported?: boolean;
+  enhanced_probe_error?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -314,6 +322,18 @@ export async function listSessions(): Promise<Session[]> {
   });
   if (!response.ok) {
     const detail = await safeError(response, "加载会话失败");
+    throw new Error(detail);
+  }
+  return response.json();
+}
+
+export async function verifyConnection(connectionId: number): Promise<Connection> {
+  const response = await fetch(`${HTTP_BASE}/connections/${connectionId}/verify`, {
+    method: "POST",
+    headers: { ...getAuthHeader() }
+  });
+  if (!response.ok) {
+    const detail = await safeError(response, "验证连接失败");
     throw new Error(detail);
   }
   return response.json();

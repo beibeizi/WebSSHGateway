@@ -26,6 +26,10 @@ from app.schemas.api import (
     TerminalMessage,
 )
 from app.services.crypto import CryptoService, EncryptedPayload
+from app.services.connection_probe import (
+    has_verified_platform_cache,
+    mark_connection_probe_verified,
+)
 from app.services.session_updates import SessionBroadcaster
 from app.services.ssh_manager import ManagedSession, SessionManager
 from app.services.system_settings import load_runtime_system_settings, resolve_retry_delay_seconds
@@ -236,12 +240,16 @@ async def prepare_session(
     auth_payload = json.loads(decrypted)
 
     session_manager: SessionManager = state.session_manager
-    try:
-        remote_arch, remote_os = await session_manager.detect_remote_platform(conn, auth_payload)
-    except _TARGET_CONNECTION_EXCEPTIONS as error:
-        _raise_target_connection_error(error, "prepare_session target detection")
-    conn.remote_arch = remote_arch
-    conn.remote_os = remote_os
+    if has_verified_platform_cache(conn):
+        remote_arch = conn.remote_arch or ""
+        remote_os = conn.remote_os or ""
+    else:
+        try:
+            remote_arch, remote_os = await session_manager.detect_remote_platform(conn, auth_payload)
+        except _TARGET_CONNECTION_EXCEPTIONS as error:
+            _raise_target_connection_error(error, "prepare_session target detection")
+        enhanced_supported = session_manager.resolve_keepalive_binary(remote_arch, remote_os) is not None
+        mark_connection_probe_verified(conn, remote_arch, remote_os, enhanced_supported)
 
     supports_enhanced = session_manager.resolve_keepalive_binary(remote_arch, remote_os) is not None
     has_existing_enhanced = db.execute(
@@ -311,15 +319,16 @@ async def create_session(
         conn.remote_os,
     )
 
-    remote_arch = (conn.remote_arch or "").strip()
-    remote_os = (conn.remote_os or "").strip()
-    if not remote_arch or not remote_os:
+    if has_verified_platform_cache(conn):
+        remote_arch = (conn.remote_arch or "").strip()
+        remote_os = (conn.remote_os or "").strip()
+    else:
         try:
             detected_arch, detected_os = await session_manager.detect_remote_platform(conn, auth_payload)
         except _TARGET_CONNECTION_EXCEPTIONS as error:
             _raise_target_connection_error(error, "create_session target detection")
-        conn.remote_arch = detected_arch
-        conn.remote_os = detected_os
+        enhanced_supported = session_manager.resolve_keepalive_binary(detected_arch, detected_os) is not None
+        mark_connection_probe_verified(conn, detected_arch, detected_os, enhanced_supported)
         remote_arch = detected_arch
         remote_os = detected_os
 
