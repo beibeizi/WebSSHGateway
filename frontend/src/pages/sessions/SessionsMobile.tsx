@@ -1,5 +1,5 @@
 import React from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, FileText } from "lucide-react";
 import { Button } from "../../components/Button";
 import { Input } from "../../components/Input";
 import type { SessionsState } from "./useSessionsState";
@@ -98,6 +98,17 @@ export function SessionsMobile({ state }: SessionsMobileProps) {
               className="px-3 py-2 text-xs whitespace-nowrap"
             >
               {state.t("系统设置", "System Settings")}
+            </Button>
+            <Button
+              variant="secondary"
+              lightMode={!state.isDark}
+              onClick={() => {
+                window.location.href = "/logs";
+              }}
+              className="px-3 py-2 text-xs whitespace-nowrap"
+            >
+              <FileText className="h-4 w-4" />
+              {state.t("日志", "Logs")}
             </Button>
           </div>
         </div>

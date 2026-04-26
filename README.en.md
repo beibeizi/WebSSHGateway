@@ -35,6 +35,7 @@ A dedicated mobile layout provides touch-friendly interactions for terminal work
 - Enhanced persistent session design powered by `tmux`, with keepalive and auto-retry
 - Mobile-friendly experience for phone browsers with touch-first layouts and controls
 - System monitoring for CPU, memory, network, process, and disk
+- System log viewer from the session management page, showing recent backend process logs for troubleshooting login, session, and system API issues
 - File management: browse, upload/download, rename, delete, chmod, batch upload
 - Security baseline: JWT auth, password policy, lockout policy, request-id logging
 

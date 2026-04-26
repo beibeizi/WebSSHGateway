@@ -956,10 +956,8 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
         newSelected.add(file.path);
       }
       setSelectedFiles(newSelected);
-      setSelectedFile(file);
     } else {
       // 鍗曢€?
-      setSelectedFile(file);
       setSelectedFiles(new Set([file.path]));
 
       // 閫氱煡鐖剁粍浠堕€変腑鐨勬枃浠?
@@ -987,7 +985,6 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
     if (!parentPath) {
       return;
     }
-    setSelectedFile(null);
     setSelectedFiles(new Set());
     onFileSelect?.(null);
     loadDirectory(parentPath, true, { preferCache: true });
@@ -995,13 +992,11 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
   }, [parentPath, onFileSelect, loadDirectory, expandTreeToPath]);
 
   const handleParentItemClick = React.useCallback(() => {
-    setSelectedFile(null);
     setSelectedFiles(new Set());
     onFileSelect?.(null);
   }, [onFileSelect]);
 
   const handleClearSelection = React.useCallback(() => {
-    setSelectedFile(null);
     setSelectedFiles(new Set());
     onFileSelect?.(null);
   }, [onFileSelect]);
@@ -1021,7 +1016,6 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
     setSelectedPath("/");
     setPathInput("/");
     setFiles([]);
-    setSelectedFile(null);
     setSelectedFiles(new Set());
     setDownloading(false);
     setDownloadStats(null);

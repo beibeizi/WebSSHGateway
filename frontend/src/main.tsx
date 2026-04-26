@@ -8,6 +8,7 @@ import { isTokenExpired } from "./lib/auth";
 import { ForcePasswordChange } from "./pages/ForcePasswordChange";
 import { Login } from "./pages/Login";
 import { Sessions } from "./pages/Sessions";
+import { SystemLogsPage } from "./pages/SystemLogs";
 import { SystemSettingsPage } from "./pages/SystemSettings";
 import { TerminalPage } from "./pages/Terminal";
 import "./index.css";
@@ -53,6 +54,14 @@ if (root) {
                 element={
                   <RequireAuth>
                     <SystemSettingsPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/logs"
+                element={
+                  <RequireAuth>
+                    <SystemLogsPage />
                   </RequireAuth>
                 }
               />

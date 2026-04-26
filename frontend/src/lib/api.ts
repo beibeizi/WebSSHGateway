@@ -32,6 +32,7 @@ const CLIENT_TEXT_MAP: Record<string, { zh: string; en: string }> = {
   "更新连接失败": { zh: "更新连接失败", en: "Failed to update connection" },
   "获取会话失败": { zh: "获取会话失败", en: "Failed to get session" },
   "获取系统状态失败": { zh: "获取系统状态失败", en: "Failed to get system stats" },
+  "获取系统日志失败": { zh: "获取系统日志失败", en: "Failed to get system logs" },
   "获取网络状态失败": { zh: "获取网络状态失败", en: "Failed to get network stats" },
   "获取进程列表失败": { zh: "获取进程列表失败", en: "Failed to get process list" },
   "获取目录列表失败": { zh: "获取目录列表失败", en: "Failed to list directory" },
@@ -573,6 +574,22 @@ export type GlobalSystemSettings = {
   show_session_status_summary: boolean;
 };
 
+export type SystemLogEntry = {
+  sequence: number;
+  timestamp: string;
+  level: "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL" | string;
+  logger: string;
+  request_id: string;
+  message: string;
+  line: string;
+};
+
+export type SystemLogList = {
+  entries: SystemLogEntry[];
+  limit: number;
+  level: string | null;
+};
+
 export async function getSystemStats(sessionId: string): Promise<SystemStats> {
   const response = await fetch(`${HTTP_BASE}/system/stats/${sessionId}`, {
     headers: { ...getAuthHeader() }
@@ -612,6 +629,23 @@ export async function getSessionStatusSummary(sessionId: string): Promise<Sessio
   });
   if (!response.ok) {
     const detail = await safeError(response, "获取会话系统状态失败");
+    throw new Error(detail);
+  }
+  return response.json();
+}
+
+export async function getSystemLogs(options: { limit?: number; level?: string | null } = {}): Promise<SystemLogList> {
+  const params = new URLSearchParams();
+  params.set("limit", String(options.limit ?? 200));
+  if (options.level) {
+    params.set("level", options.level);
+  }
+
+  const response = await fetch(`${HTTP_BASE}/system/logs?${params.toString()}`, {
+    headers: { ...getAuthHeader() }
+  });
+  if (!response.ok) {
+    const detail = await safeError(response, "获取系统日志失败");
     throw new Error(detail);
   }
   return response.json();

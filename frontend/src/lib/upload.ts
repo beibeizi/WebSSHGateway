@@ -136,8 +136,10 @@ export const snapshotDropPayload = (dataTransfer: DataTransfer): DropSnapshot =>
         webkitGetAsEntry?: () => LegacyFileSystemEntry | null;
       };
 
+      const entry = webkitItem.webkitGetAsEntry ? (webkitItem.webkitGetAsEntry() as LegacyFileSystemEntry | null) : null;
+
       return {
-        entry: webkitItem.webkitGetAsEntry?.() ?? null,
+        entry,
         fallbackFile: item.getAsFile?.() ?? null,
       };
     });
@@ -265,7 +267,10 @@ export const createTarGzArchive = async (
     offset += chunk.length;
   }
 
-  return new Blob([gzipSync(tarData)]);
+  const compressed = gzipSync(tarData);
+  const compressedBuffer = new ArrayBuffer(compressed.byteLength);
+  new Uint8Array(compressedBuffer).set(compressed);
+  return new Blob([compressedBuffer]);
 };
 
 export type { DroppedFile, DropSnapshot, DropItemSnapshot, LegacyFileSystemEntry };

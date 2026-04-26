@@ -138,7 +138,7 @@ def create_app() -> FastAPI:
         if index_path.exists():
             index_bytes = index_path.read_bytes()
             index_response = Response(content=index_bytes, media_type="text/html")
-            spa_exact_paths = {"/", "/sessions", "/force-password", "/settings"}
+            spa_exact_paths = {"/", "/sessions", "/force-password", "/settings", "/logs"}
             spa_prefix_paths = ("/terminal/",)
 
             def is_spa_document_request(request: Request) -> bool:

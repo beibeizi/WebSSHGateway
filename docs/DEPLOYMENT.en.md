@@ -88,3 +88,10 @@ docker compose up -d --build
 - Initial password comes from `INITIAL_ADMIN_PASSWORD` in `.env`
 - Password change is required after first login
 - To reset an existing user's password, run `cd backend && python -m app.cli reset-password --username <username>` in the backend directory on the server
+
+## 6. Troubleshooting
+
+- Login fails: check that `SECRET_KEY` is 16/24/32 bytes long and that `INITIAL_ADMIN_PASSWORD` was set before the first database bootstrap.
+- SSH connection fails: verify host reachability, credentials, and host key policy.
+- Frontend requests return 401: check whether the token expired or whether `VITE_API_BASE` points to the correct backend in development mode.
+- Service diagnostics: after login, open **Logs** next to **System Settings** on the session management page, or visit `/logs` directly. The page shows recent logs from the current backend process memory buffer. Logs restart when the service restarts and are not a replacement for full host or Docker log history.
