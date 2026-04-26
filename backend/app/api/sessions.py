@@ -6,6 +6,7 @@ import logging
 import time
 import uuid
 
+import asyncssh
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel
 from sqlalchemy import select, func
@@ -63,6 +64,7 @@ _DA_RESPONSE_SEQUENCES: tuple[str, ...] = tuple(
 )
 _DA_MAX_SEQUENCE_LEN = max(len(sequence) for sequence in _DA_RESPONSE_SEQUENCES)
 _INITIAL_DA_SUPPRESS_SECONDS = 12.0
+_TARGET_CONNECTION_EXCEPTIONS = (ValueError, OSError, TimeoutError, asyncssh.Error)
 
 
 def _strip_da_response_sequences(data: str) -> str:
@@ -104,6 +106,19 @@ class SessionPrepareResponse(BaseModel):
     supports_enhanced: bool
     first_time_enhance_available: bool
     should_prompt_enhance: bool
+
+
+def _target_connection_error_detail(error: Exception) -> str:
+    if isinstance(error, asyncssh.PermissionDenied):
+        return "SSH 认证失败，请检查用户名、密码或私钥"
+    detail = str(error).strip()
+    return detail or "连接目标失败"
+
+
+def _raise_target_connection_error(error: Exception, operation: str) -> None:
+    detail = _target_connection_error_detail(error)
+    logger.warning("%s failed: %s", operation, detail)
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from error
 
 
 def _serialize_session_status(record: SessionRecord) -> str:
@@ -221,7 +236,10 @@ async def prepare_session(
     auth_payload = json.loads(decrypted)
 
     session_manager: SessionManager = state.session_manager
-    remote_arch, remote_os = await session_manager.detect_remote_platform(conn, auth_payload)
+    try:
+        remote_arch, remote_os = await session_manager.detect_remote_platform(conn, auth_payload)
+    except _TARGET_CONNECTION_EXCEPTIONS as error:
+        _raise_target_connection_error(error, "prepare_session target detection")
     conn.remote_arch = remote_arch
     conn.remote_os = remote_os
 
@@ -296,7 +314,10 @@ async def create_session(
     remote_arch = (conn.remote_arch or "").strip()
     remote_os = (conn.remote_os or "").strip()
     if not remote_arch or not remote_os:
-        detected_arch, detected_os = await session_manager.detect_remote_platform(conn, auth_payload)
+        try:
+            detected_arch, detected_os = await session_manager.detect_remote_platform(conn, auth_payload)
+        except _TARGET_CONNECTION_EXCEPTIONS as error:
+            _raise_target_connection_error(error, "create_session target detection")
         conn.remote_arch = detected_arch
         conn.remote_os = detected_os
         remote_arch = detected_arch
@@ -322,14 +343,17 @@ async def create_session(
     ).scalar_one()
     next_order = (max_order or 0) + 1
 
-    managed = await session_manager.create_session(
-        connection=conn,
-        auth_payload=auth_payload,
-        pty=pty,
-        enhanced_enabled=enable_enhanced,
-        enhanced_fingerprint=enhanced_fingerprint,
-        tmux_binary_path=tmux_binary_path,
-    )
+    try:
+        managed = await session_manager.create_session(
+            connection=conn,
+            auth_payload=auth_payload,
+            pty=pty,
+            enhanced_enabled=enable_enhanced,
+            enhanced_fingerprint=enhanced_fingerprint,
+            tmux_binary_path=tmux_binary_path,
+        )
+    except _TARGET_CONNECTION_EXCEPTIONS as error:
+        _raise_target_connection_error(error, "create_session ssh connection")
 
     record = SessionRecord(
         id=managed.session_id,

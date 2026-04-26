@@ -97,6 +97,14 @@ _MESSAGE_CATALOG: dict[str, dict[str, str]] = {
         "zh": "无效的私钥格式或密码错误",
         "en": "Invalid private key format or passphrase",
     },
+    "ssh_auth_failed": {
+        "zh": "SSH 认证失败，请检查用户名、密码或私钥",
+        "en": "SSH authentication failed. Check the username, password, or private key.",
+    },
+    "target_connect_failed": {
+        "zh": "连接目标失败",
+        "en": "Failed to connect to target host",
+    },
     "host_key_missing": {
         "zh": "服务端未返回主机指纹",
         "en": "Host key not provided by server",
