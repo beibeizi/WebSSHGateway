@@ -1,5 +1,13 @@
 import React from "react";
 import { getSessionStatusSummary, Session, SessionStatusSummary } from "../../lib/api";
+import {
+  getFreshSessionStatusSummaries,
+  mergeSessionStatusSummaryCache,
+  pruneSessionStatusSummaryCache,
+  readSessionStatusSummaryCache,
+  SESSION_STATUS_SUMMARY_CACHE_TTL_MS,
+  writeSessionStatusSummaryCache,
+} from "./sessionsUtils";
 
 export type SessionStatusEntry = {
   summary: SessionStatusSummary | null;
@@ -8,6 +16,14 @@ export type SessionStatusEntry = {
 };
 
 const MAX_CONCURRENT_REQUESTS = 3;
+
+function getBrowserSessionStorage(): Storage | null {
+  try {
+    return typeof window === "undefined" ? null : window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
 
 async function runWithConcurrency<T>(
   items: T[],
@@ -55,11 +71,27 @@ export function useSessionStatusSummary(visibleSessions: Session[], enabled: boo
   }, [activeSessionIdsKey, enabled]);
 
   React.useEffect(() => {
+    const storage = getBrowserSessionStorage();
+    const cache = readSessionStatusSummaryCache<SessionStatusSummary>(storage);
+    const freshSummaries = getFreshSessionStatusSummaries(
+      cache,
+      stableActiveSessionIds,
+      Date.now(),
+      SESSION_STATUS_SUMMARY_CACHE_TTL_MS
+    );
+    writeSessionStatusSummaryCache(storage, pruneSessionStatusSummaryCache(cache, stableActiveSessionIds));
+
     setStatusEntries((prev) => {
       const next: Record<string, SessionStatusEntry> = {};
       stableActiveSessionIds.forEach((sessionId) => {
         if (prev[sessionId]) {
           next[sessionId] = prev[sessionId];
+        } else if (freshSummaries[sessionId]) {
+          next[sessionId] = {
+            summary: freshSummaries[sessionId],
+            loading: false,
+            error: false,
+          };
         }
       });
       return next;
@@ -105,6 +137,21 @@ export function useSessionStatusSummary(visibleSessions: Session[], enabled: boo
       if (!mountedRef.current || currentVersion !== versionRef.current) {
         return;
       }
+
+      const successfulSummaries: Record<string, SessionStatusSummary> = {};
+      summaries.forEach((summary, sessionId) => {
+        successfulSummaries[sessionId] = summary;
+      });
+      const storage = getBrowserSessionStorage();
+      const cache = readSessionStatusSummaryCache<SessionStatusSummary>(storage);
+      writeSessionStatusSummaryCache(
+        storage,
+        mergeSessionStatusSummaryCache(
+          pruneSessionStatusSummaryCache(cache, currentIds),
+          successfulSummaries,
+          Date.now()
+        )
+      );
 
       setStatusEntries((prev) => {
         const next: Record<string, SessionStatusEntry> = {};

@@ -69,6 +69,7 @@ export function SessionGroupedList({ state, layout }: SessionGroupedListProps) {
                       session={session}
                       layout={layout}
                       orderingScopeSessions={group.sessions}
+                      showStatusSummary={false}
                     />
                   ))}
                 </div>

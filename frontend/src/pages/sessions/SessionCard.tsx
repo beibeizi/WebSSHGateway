@@ -13,15 +13,17 @@ type SessionCardProps = {
   session: Session;
   layout: "desktop" | "mobile";
   orderingScopeSessions?: Session[];
+  showStatusSummary?: boolean;
 };
 
-export function SessionCard({ state, session, layout, orderingScopeSessions }: SessionCardProps) {
+export function SessionCard({ state, session, layout, orderingScopeSessions, showStatusSummary = true }: SessionCardProps) {
   const noteValue = state.noteDrafts[session.id] ?? "";
   const scopedSessions = orderingScopeSessions ?? state.filteredSessions;
   const currentIndex = scopedSessions.findIndex((item) => item.id === session.id);
   const canMoveUp = currentIndex > 0 && !state.ordering.savingOrder;
   const canMoveDown = currentIndex >= 0 && currentIndex < scopedSessions.length - 1 && !state.ordering.savingOrder;
   const isMobile = layout === "mobile";
+  const shouldShowStatusSummary = showStatusSummary && state.showSessionStatusSummary && session.status === "active";
 
   const actionButtonClassName = isMobile ? "min-h-11 w-full" : undefined;
   const rootClassName = cn(
@@ -176,7 +178,7 @@ export function SessionCard({ state, session, layout, orderingScopeSessions }: S
         <div className="space-y-2">
           <div className="min-w-0">{sessionMeta}</div>
           {sessionActions}
-          {state.showSessionStatusSummary && session.status === "active" ? (
+          {shouldShowStatusSummary ? (
             <SessionStatusSummary
               entry={state.sessionStatusEntries[session.id]}
               isDark={state.isDark}
@@ -191,7 +193,7 @@ export function SessionCard({ state, session, layout, orderingScopeSessions }: S
         </div>
       )}
 
-      {!isMobile && state.showSessionStatusSummary && session.status === "active" ? (
+      {!isMobile && shouldShowStatusSummary ? (
         <div className="mt-4">
           <SessionStatusSummary
             entry={state.sessionStatusEntries[session.id]}

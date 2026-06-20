@@ -1,8 +1,7 @@
 import React from "react";
 import { List, PanelsTopLeft } from "lucide-react";
 import { cn } from "../../lib/utils";
-
-type SessionViewMode = "list" | "grouped";
+import type { SessionViewMode } from "./sessionsUtils";
 
 type SessionViewModeToggleProps = {
   value: SessionViewMode;

@@ -17,7 +17,14 @@ import {
   updateSessionNote,
   verifyConnection,
 } from "../../lib/api";
-import { localizeText, normalizeTargetProfile, pickWorseProfile } from "./sessionsUtils";
+import {
+  localizeText,
+  normalizeTargetProfile,
+  pickWorseProfile,
+  readSessionViewMode,
+  writeSessionViewMode,
+  type SessionViewMode,
+} from "./sessionsUtils";
 import { useSessionStatusSummary } from "./useSessionStatusSummary";
 import { useSessionsOrdering } from "./useSessionsOrdering";
 import { useSessionsPolling } from "./useSessionsPolling";
@@ -25,12 +32,22 @@ import { usePasswordDialog } from "./usePasswordDialog";
 
 const SESSION_CREATE_TIMEOUT_MS = 30000;
 
+function getBrowserLocalStorage(): Storage | null {
+  try {
+    return typeof window === "undefined" ? null : window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
 export function useSessionsState() {
   const [connections, setConnections] = React.useState<Connection[]>([]);
   const [sessions, setSessions] = React.useState<Session[]>([]);
   const [filter, setFilter] = React.useState("all");
   const [search, setSearch] = React.useState("");
-  const [viewMode, setViewMode] = React.useState<"list" | "grouped">("list");
+  const [viewMode, setViewModeState] = React.useState<SessionViewMode>(() => {
+    return readSessionViewMode(getBrowserLocalStorage());
+  });
   const [loading, setLoading] = React.useState(true);
   const [form, setForm] = React.useState({
     name: "",
@@ -77,6 +94,11 @@ export function useSessionsState() {
   const passwordDialog = usePasswordDialog({ push, t });
   const sessionsRef = React.useRef<Session[]>([]);
   const draggingRef = React.useRef(false);
+
+  const setViewMode = React.useCallback((nextViewMode: SessionViewMode) => {
+    setViewModeState(nextViewMode);
+    writeSessionViewMode(getBrowserLocalStorage(), nextViewMode);
+  }, []);
 
   const preserveOrderIfDragging = React.useCallback((sessionList: Session[]) => {
     if (!draggingRef.current) {
