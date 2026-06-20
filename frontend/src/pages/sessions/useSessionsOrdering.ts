@@ -100,7 +100,7 @@ export function useSessionsOrdering({
     setDraggingSessionId(sessionId);
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", sessionId);
-  }, [savingOrder]);
+  }, [draggingRef, savingOrder]);
 
   const handleDragOver = React.useCallback((sessionId: string, event: React.DragEvent<HTMLDivElement>) => {
     if (!draggingSessionId || draggingSessionId === sessionId) {
@@ -131,7 +131,7 @@ export function useSessionsOrdering({
     }
     orderDirtyRef.current = false;
     await persistSessionOrder(orderedIdsRef.current);
-  }, [persistSessionOrder]);
+  }, [draggingRef, persistSessionOrder]);
 
   const handleMoveSession = React.useCallback(async (sessionId: string, direction: "up" | "down") => {
     if (savingOrder) {

@@ -1,17 +1,6 @@
 import React, { useMemo } from "react";
-
-export type Toast = {
-  id: string;
-  message: string;
-};
-
-export type ToastContextValue = {
-  toasts: Toast[];
-  push: (message: string) => void;
-  dismiss: (id: string) => void;
-};
-
-const ToastContext = React.createContext<ToastContextValue | null>(null);
+import { ToastContext } from "./ToastContext";
+import type { ToastContextValue, Toast } from "./ToastContext";
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = React.useState<Toast[]>([]);
@@ -55,12 +44,4 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       </div>
     </ToastContext.Provider>
   );
-}
-
-export function useToast() {
-  const ctx = React.useContext(ToastContext);
-  if (!ctx) {
-    throw new Error("ToastProvider missing");
-  }
-  return ctx;
 }

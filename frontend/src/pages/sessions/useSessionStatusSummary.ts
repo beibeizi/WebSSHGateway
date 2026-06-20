@@ -35,7 +35,10 @@ export function useSessionStatusSummary(visibleSessions: Session[], enabled: boo
   );
   // 仅当活跃会话集合真正变化时，才重建轮询依赖，避免每次渲染都让请求结果失效。
   const activeSessionIdsKey = React.useMemo(() => activeSessionIds.join("|"), [activeSessionIds]);
-  const stableActiveSessionIds = React.useMemo(() => activeSessionIds, [activeSessionIdsKey]);
+  const stableActiveSessionIds = React.useMemo(
+    () => activeSessionIdsKey ? activeSessionIdsKey.split("|") : [],
+    [activeSessionIdsKey]
+  );
   const [statusEntries, setStatusEntries] = React.useState<Record<string, SessionStatusEntry>>({});
   const inFlightRef = React.useRef(false);
   const mountedRef = React.useRef(true);

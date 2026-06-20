@@ -2,8 +2,8 @@ import React from "react";
 import { RefreshCcw } from "lucide-react";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
-import { useToast } from "../components/Toast";
-import { useApp } from "../context/AppContext";
+import { useToast } from "../components/ToastContext";
+import { useApp } from "../context/AppContextCore";
 import { getSystemLogs, type SystemLogEntry } from "../lib/api";
 
 const LEVELS = ["ALL", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] as const;

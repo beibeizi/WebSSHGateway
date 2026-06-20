@@ -138,7 +138,7 @@ export function SessionsMobile({ state }: SessionsMobileProps) {
                       type="button"
                       onClick={() => state.ordering.handleMoveSession(session.id, "up")}
                       disabled={!canMoveUp}
-                      className={`flex h-9 w-9 items-center justify-center rounded-full transition ${
+                      className={`flex h-11 w-11 items-center justify-center rounded-full transition ${
                         canMoveUp
                           ? (state.isDark ? "hover:bg-slate-800 text-slate-200" : "hover:bg-slate-100 text-slate-700")
                           : "opacity-40 cursor-not-allowed"
@@ -151,7 +151,7 @@ export function SessionsMobile({ state }: SessionsMobileProps) {
                       type="button"
                       onClick={() => state.ordering.handleMoveSession(session.id, "down")}
                       disabled={!canMoveDown}
-                      className={`flex h-9 w-9 items-center justify-center rounded-full transition ${
+                      className={`flex h-11 w-11 items-center justify-center rounded-full transition ${
                         canMoveDown
                           ? (state.isDark ? "hover:bg-slate-800 text-slate-200" : "hover:bg-slate-100 text-slate-700")
                           : "opacity-40 cursor-not-allowed"

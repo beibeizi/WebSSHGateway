@@ -33,6 +33,22 @@ function getProbeStatusClass(state: SessionsState, status?: string) {
 }
 
 export function SessionsConnectionsPanel({ state }: SessionsConnectionsPanelProps) {
+  const createNameId = React.useId();
+  const createHostId = React.useId();
+  const createPortId = React.useId();
+  const createUsernameId = React.useId();
+  const createPasswordId = React.useId();
+  const createPrivateKeyId = React.useId();
+  const createKeyPassphraseId = React.useId();
+  const editNameId = React.useId();
+  const editHostId = React.useId();
+  const editPortId = React.useId();
+  const editUsernameId = React.useId();
+  const editPasswordId = React.useId();
+  const editPrivateKeyId = React.useId();
+  const editKeyPassphraseId = React.useId();
+  const fieldLabelClassName = `mb-1 block text-xs font-medium ${state.isDark ? "text-slate-300" : "text-slate-700"}`;
+
   return (
     <Card
       title={state.t("新增 SSH 连接", "New SSH Connection")}
@@ -64,31 +80,55 @@ export function SessionsConnectionsPanel({ state }: SessionsConnectionsPanelProp
                 "Make sure the machine running this project can reach the target connection."
               )}
             </div>
-            <Input
-              placeholder={state.t("连接名称", "Connection name")}
-              value={state.form.name}
-              onChange={(event) => state.setForm({ ...state.form, name: event.target.value })}
-              className={!state.isDark ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400" : ""}
-            />
-            <Input
-              placeholder={state.t("主机 IP", "Host IP")}
-              value={state.form.host}
-              onChange={(event) => state.setForm({ ...state.form, host: event.target.value })}
-              className={!state.isDark ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400" : ""}
-            />
-            <Input
-              placeholder={state.t("端口", "Port")}
-              type="number"
-              value={state.form.port}
-              onChange={(event) => state.setForm({ ...state.form, port: Number(event.target.value) })}
-              className={!state.isDark ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400" : ""}
-            />
-            <Input
-              placeholder={state.t("用户名", "Username")}
-              value={state.form.username}
-              onChange={(event) => state.setForm({ ...state.form, username: event.target.value })}
-              className={!state.isDark ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400" : ""}
-            />
+            <div>
+              <label htmlFor={createNameId} className={fieldLabelClassName}>
+                {state.t("连接名称", "Connection name")}
+              </label>
+              <Input
+                id={createNameId}
+                placeholder={state.t("例如：生产服务器", "Example: production server")}
+                value={state.form.name}
+                onChange={(event) => state.setForm({ ...state.form, name: event.target.value })}
+                className={!state.isDark ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400" : ""}
+              />
+            </div>
+            <div>
+              <label htmlFor={createHostId} className={fieldLabelClassName}>
+                {state.t("主机", "Host")}
+              </label>
+              <Input
+                id={createHostId}
+                placeholder={state.t("主机 IP 或域名", "Host IP or domain")}
+                value={state.form.host}
+                onChange={(event) => state.setForm({ ...state.form, host: event.target.value })}
+                className={!state.isDark ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400" : ""}
+              />
+            </div>
+            <div>
+              <label htmlFor={createPortId} className={fieldLabelClassName}>
+                {state.t("端口", "Port")}
+              </label>
+              <Input
+                id={createPortId}
+                placeholder="22"
+                type="number"
+                value={state.form.port}
+                onChange={(event) => state.setForm({ ...state.form, port: Number(event.target.value) })}
+                className={!state.isDark ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400" : ""}
+              />
+            </div>
+            <div>
+              <label htmlFor={createUsernameId} className={fieldLabelClassName}>
+                {state.t("用户名", "Username")}
+              </label>
+              <Input
+                id={createUsernameId}
+                placeholder={state.t("登录用户名", "Login username")}
+                value={state.form.username}
+                onChange={(event) => state.setForm({ ...state.form, username: event.target.value })}
+                className={!state.isDark ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400" : ""}
+              />
+            </div>
             <div className="flex gap-2">
               <Button
                 type="button"
@@ -108,28 +148,46 @@ export function SessionsConnectionsPanel({ state }: SessionsConnectionsPanelProp
               </Button>
             </div>
             {state.form.auth_type === "password" ? (
-              <Input
-                placeholder={state.t("密码", "Password")}
-                type="password"
-                value={state.form.password}
-                onChange={(event) => state.setForm({ ...state.form, password: event.target.value })}
-                className={!state.isDark ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400" : ""}
-              />
-            ) : (
-              <>
-                <textarea
-                  className={`min-h-[120px] w-full rounded-md border px-3 py-2 text-sm ${state.isDark ? "border-slate-700 bg-slate-900 text-slate-100" : "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"}`}
-                  placeholder={state.t("私钥内容", "Private key content")}
-                  value={state.form.private_key}
-                  onChange={(event) => state.setForm({ ...state.form, private_key: event.target.value })}
-                />
+              <div>
+                <label htmlFor={createPasswordId} className={fieldLabelClassName}>
+                  {state.t("密码", "Password")}
+                </label>
                 <Input
-                  placeholder={state.t("私钥密码（可选）", "Private key passphrase (optional)")}
+                  id={createPasswordId}
+                  placeholder={state.t("输入登录密码", "Enter login password")}
                   type="password"
-                  value={state.form.key_passphrase}
-                  onChange={(event) => state.setForm({ ...state.form, key_passphrase: event.target.value })}
+                  value={state.form.password}
+                  onChange={(event) => state.setForm({ ...state.form, password: event.target.value })}
                   className={!state.isDark ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400" : ""}
                 />
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label htmlFor={createPrivateKeyId} className={fieldLabelClassName}>
+                    {state.t("私钥", "Private key")}
+                  </label>
+                  <textarea
+                    id={createPrivateKeyId}
+                    className={`min-h-[120px] w-full rounded-md border px-3 py-2 text-sm ${state.isDark ? "border-slate-700 bg-slate-900 text-slate-100" : "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"}`}
+                    placeholder={state.t("粘贴私钥内容", "Paste private key content")}
+                    value={state.form.private_key}
+                    onChange={(event) => state.setForm({ ...state.form, private_key: event.target.value })}
+                  />
+                </div>
+                <div>
+                  <label htmlFor={createKeyPassphraseId} className={fieldLabelClassName}>
+                    {state.t("私钥密码（可选）", "Private key passphrase (optional)")}
+                  </label>
+                  <Input
+                    id={createKeyPassphraseId}
+                    placeholder={state.t("输入私钥密码", "Enter private key passphrase")}
+                    type="password"
+                    value={state.form.key_passphrase}
+                    onChange={(event) => state.setForm({ ...state.form, key_passphrase: event.target.value })}
+                    className={!state.isDark ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400" : ""}
+                  />
+                </div>
               </>
             )}
             <Button type="submit" lightMode={!state.isDark} className="w-full">
@@ -144,31 +202,55 @@ export function SessionsConnectionsPanel({ state }: SessionsConnectionsPanelProp
           <div key={conn.id} className={`rounded-md border p-3 text-sm ${state.isDark ? "border-slate-700 bg-slate-900/60 text-slate-300" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
             {state.editingConnection?.id === conn.id ? (
               <form className="space-y-3" onSubmit={state.handleUpdateConnection}>
-                <Input
-                  placeholder={state.t("连接名称", "Connection name")}
-                  value={state.editForm.name}
-                  onChange={(event) => state.setEditForm({ ...state.editForm, name: event.target.value })}
-                  className={!state.isDark ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400" : ""}
-                />
-                <Input
-                  placeholder={state.t("主机 IP", "Host IP")}
-                  value={state.editForm.host}
-                  onChange={(event) => state.setEditForm({ ...state.editForm, host: event.target.value })}
-                  className={!state.isDark ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400" : ""}
-                />
-                <Input
-                  placeholder={state.t("端口", "Port")}
-                  type="number"
-                  value={state.editForm.port}
-                  onChange={(event) => state.setEditForm({ ...state.editForm, port: Number(event.target.value) })}
-                  className={!state.isDark ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400" : ""}
-                />
-                <Input
-                  placeholder={state.t("用户名", "Username")}
-                  value={state.editForm.username}
-                  onChange={(event) => state.setEditForm({ ...state.editForm, username: event.target.value })}
-                  className={!state.isDark ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400" : ""}
-                />
+                <div>
+                  <label htmlFor={editNameId} className={fieldLabelClassName}>
+                    {state.t("连接名称", "Connection name")}
+                  </label>
+                  <Input
+                    id={editNameId}
+                    placeholder={state.t("例如：生产服务器", "Example: production server")}
+                    value={state.editForm.name}
+                    onChange={(event) => state.setEditForm({ ...state.editForm, name: event.target.value })}
+                    className={!state.isDark ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400" : ""}
+                  />
+                </div>
+                <div>
+                  <label htmlFor={editHostId} className={fieldLabelClassName}>
+                    {state.t("主机", "Host")}
+                  </label>
+                  <Input
+                    id={editHostId}
+                    placeholder={state.t("主机 IP 或域名", "Host IP or domain")}
+                    value={state.editForm.host}
+                    onChange={(event) => state.setEditForm({ ...state.editForm, host: event.target.value })}
+                    className={!state.isDark ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400" : ""}
+                  />
+                </div>
+                <div>
+                  <label htmlFor={editPortId} className={fieldLabelClassName}>
+                    {state.t("端口", "Port")}
+                  </label>
+                  <Input
+                    id={editPortId}
+                    placeholder="22"
+                    type="number"
+                    value={state.editForm.port}
+                    onChange={(event) => state.setEditForm({ ...state.editForm, port: Number(event.target.value) })}
+                    className={!state.isDark ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400" : ""}
+                  />
+                </div>
+                <div>
+                  <label htmlFor={editUsernameId} className={fieldLabelClassName}>
+                    {state.t("用户名", "Username")}
+                  </label>
+                  <Input
+                    id={editUsernameId}
+                    placeholder={state.t("登录用户名", "Login username")}
+                    value={state.editForm.username}
+                    onChange={(event) => state.setEditForm({ ...state.editForm, username: event.target.value })}
+                    className={!state.isDark ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400" : ""}
+                  />
+                </div>
                 <div className="flex gap-2">
                   <Button
                     type="button"
@@ -189,28 +271,46 @@ export function SessionsConnectionsPanel({ state }: SessionsConnectionsPanelProp
                 </div>
                 <p className={`text-xs ${state.isDark ? "text-slate-500" : "text-slate-400"}`}>{state.t("留空则保持原凭据不变", "Leave empty to keep original credentials")}</p>
                 {state.editForm.auth_type === "password" ? (
-                  <Input
-                    placeholder={state.t("新密码（可选）", "New password (optional)")}
-                    type="password"
-                    value={state.editForm.password}
-                    onChange={(event) => state.setEditForm({ ...state.editForm, password: event.target.value })}
-                    className={!state.isDark ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400" : ""}
-                  />
-                ) : (
-                  <>
-                    <textarea
-                      className={`min-h-[80px] w-full rounded-md border px-3 py-2 text-sm ${state.isDark ? "border-slate-700 bg-slate-900 text-slate-100" : "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"}`}
-                      placeholder={state.t("新私钥（可选）", "New private key (optional)")}
-                      value={state.editForm.private_key}
-                      onChange={(event) => state.setEditForm({ ...state.editForm, private_key: event.target.value })}
-                    />
+                  <div>
+                    <label htmlFor={editPasswordId} className={fieldLabelClassName}>
+                      {state.t("新密码（可选）", "New password (optional)")}
+                    </label>
                     <Input
-                      placeholder={state.t("私钥密码（可选）", "Private key passphrase (optional)")}
+                      id={editPasswordId}
+                      placeholder={state.t("留空则保持原密码", "Leave empty to keep current password")}
                       type="password"
-                      value={state.editForm.key_passphrase}
-                      onChange={(event) => state.setEditForm({ ...state.editForm, key_passphrase: event.target.value })}
+                      value={state.editForm.password}
+                      onChange={(event) => state.setEditForm({ ...state.editForm, password: event.target.value })}
                       className={!state.isDark ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400" : ""}
                     />
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label htmlFor={editPrivateKeyId} className={fieldLabelClassName}>
+                        {state.t("新私钥（可选）", "New private key (optional)")}
+                      </label>
+                      <textarea
+                        id={editPrivateKeyId}
+                        className={`min-h-[80px] w-full rounded-md border px-3 py-2 text-sm ${state.isDark ? "border-slate-700 bg-slate-900 text-slate-100" : "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"}`}
+                        placeholder={state.t("留空则保持原私钥", "Leave empty to keep current private key")}
+                        value={state.editForm.private_key}
+                        onChange={(event) => state.setEditForm({ ...state.editForm, private_key: event.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor={editKeyPassphraseId} className={fieldLabelClassName}>
+                        {state.t("私钥密码（可选）", "Private key passphrase (optional)")}
+                      </label>
+                      <Input
+                        id={editKeyPassphraseId}
+                        placeholder={state.t("输入私钥密码", "Enter private key passphrase")}
+                        type="password"
+                        value={state.editForm.key_passphrase}
+                        onChange={(event) => state.setEditForm({ ...state.editForm, key_passphrase: event.target.value })}
+                        className={!state.isDark ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400" : ""}
+                      />
+                    </div>
                   </>
                 )}
                 <div className="flex gap-2">
@@ -245,7 +345,7 @@ export function SessionsConnectionsPanel({ state }: SessionsConnectionsPanelProp
                     {conn.remote_probe_status === "failed" && conn.remote_probe_error ? (
                       <button
                         type="button"
-                        className={`inline-flex h-5 w-5 items-center justify-center rounded-full border text-xs font-bold ${state.isDark ? "border-rose-400/50 text-rose-200" : "border-rose-300 text-rose-700"}`}
+                        className={`inline-flex h-11 w-11 items-center justify-center rounded-full border text-xs font-bold ${state.isDark ? "border-rose-400/50 text-rose-200" : "border-rose-300 text-rose-700"}`}
                         title={conn.remote_probe_error}
                         onClick={() => state.push(conn.remote_probe_error || state.t("验证失败", "Verification failed"))}
                       >

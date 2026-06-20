@@ -1,6 +1,6 @@
 import React from "react";
-import { useToast } from "../../components/Toast";
-import { useApp } from "../../context/AppContext";
+import { useToast } from "../../components/ToastContext";
+import { useApp } from "../../context/AppContextCore";
 import { darkTerminalTheme, lightTerminalTheme } from "./terminalUtils";
 import { useTerminalSocket } from "./useTerminalSocket";
 import { useTerminalSessionInfo } from "./useTerminalSessionInfo";
