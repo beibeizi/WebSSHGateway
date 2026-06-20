@@ -1,13 +1,15 @@
 import React from "react";
-import { ChevronDown, ChevronUp, FileText } from "lucide-react";
+import { FileText } from "lucide-react";
 import { Button } from "../../components/Button";
 import { Input } from "../../components/Input";
 import type { SessionsState } from "./useSessionsState";
 import { SessionsConnectionsPanel } from "./SessionsConnectionsPanel";
 import { SessionsDialogs } from "./SessionsDialogs";
-import { SessionStatusSummary } from "./SessionStatusSummary";
-import { SessionStatusChip } from "./SessionStatusChip";
 import { clearAuthStorage } from "../../lib/api";
+import { SessionCard } from "./SessionCard";
+import { SessionEmptyState } from "./SessionEmptyState";
+import { SessionGroupedList } from "./SessionGroupedList";
+import { SessionViewModeToggle } from "./SessionViewModeToggle";
 
 type SessionsMobileProps = {
   state: SessionsState;
@@ -74,6 +76,12 @@ export function SessionsMobile({ state }: SessionsMobileProps) {
             onChange={(event) => state.setSearch(event.target.value)}
             className={`${state.isDark ? "" : "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"}`}
           />
+          <SessionViewModeToggle
+            value={state.viewMode}
+            onChange={state.setViewMode}
+            isDark={state.isDark}
+            t={state.t}
+          />
           <div className="flex gap-2 overflow-x-auto pb-1">
             {[
               { value: "all", label: state.t("全部", "All") },
@@ -85,7 +93,7 @@ export function SessionsMobile({ state }: SessionsMobileProps) {
                 variant={state.filter === item.value ? "primary" : "secondary"}
                 lightMode={!state.isDark}
                 onClick={() => state.setFilter(item.value)}
-                className="px-3 py-2 text-xs whitespace-nowrap"
+                className="min-h-11 px-3 py-2 text-xs whitespace-nowrap"
               >
                 {item.label}
               </Button>
@@ -96,7 +104,7 @@ export function SessionsMobile({ state }: SessionsMobileProps) {
               onClick={() => {
                 window.location.href = "/settings";
               }}
-              className="px-3 py-2 text-xs whitespace-nowrap"
+              className="min-h-11 px-3 py-2 text-xs whitespace-nowrap"
             >
               {state.t("系统设置", "System Settings")}
             </Button>
@@ -106,7 +114,7 @@ export function SessionsMobile({ state }: SessionsMobileProps) {
               onClick={() => {
                 window.location.href = "/logs";
               }}
-              className="px-3 py-2 text-xs whitespace-nowrap"
+              className="min-h-11 px-3 py-2 text-xs whitespace-nowrap"
             >
               <FileText className="h-4 w-4" />
               {state.t("日志", "Logs")}
@@ -115,155 +123,16 @@ export function SessionsMobile({ state }: SessionsMobileProps) {
         </div>
 
         <div className="grid gap-4">
-          {state.filteredSessions.map((session, index) => {
-            const noteValue = state.noteDrafts[session.id] ?? "";
-            const canMoveUp = index > 0 && !state.ordering.savingOrder;
-            const canMoveDown = index < state.filteredSessions.length - 1 && !state.ordering.savingOrder;
-            return (
-              <div
-                key={session.id}
-                ref={(element) => {
-                  if (element) {
-                    state.ordering.cardRefs.current.set(session.id, element);
-                  } else {
-                    state.ordering.cardRefs.current.delete(session.id);
-                  }
-                }}
-                className={`relative rounded-lg border p-4 pl-12 transition-transform duration-200 ease-out will-change-transform ${
-                  state.isDark ? "border-slate-700 bg-slate-900/60" : "border-slate-200 bg-white shadow-sm"
-                }`}
-              >
-                <div className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2">
-                  <div className={`flex flex-col items-center gap-1 rounded-full border p-1 ${state.isDark ? "border-slate-700 bg-slate-900 text-slate-400" : "border-slate-200 bg-white text-slate-500"}`}>
-                    <button
-                      type="button"
-                      onClick={() => state.ordering.handleMoveSession(session.id, "up")}
-                      disabled={!canMoveUp}
-                      className={`flex h-11 w-11 items-center justify-center rounded-full transition ${
-                        canMoveUp
-                          ? (state.isDark ? "hover:bg-slate-800 text-slate-200" : "hover:bg-slate-100 text-slate-700")
-                          : "opacity-40 cursor-not-allowed"
-                      }`}
-                      aria-label={state.t("上移会话", "Move session up")}
-                    >
-                      <ChevronUp className="h-5 w-5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => state.ordering.handleMoveSession(session.id, "down")}
-                      disabled={!canMoveDown}
-                      className={`flex h-11 w-11 items-center justify-center rounded-full transition ${
-                        canMoveDown
-                          ? (state.isDark ? "hover:bg-slate-800 text-slate-200" : "hover:bg-slate-100 text-slate-700")
-                          : "opacity-40 cursor-not-allowed"
-                      }`}
-                      aria-label={state.t("下移会话", "Move session down")}
-                    >
-                      <ChevronDown className="h-5 w-5" />
-                    </button>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <div className="min-w-0">
-                    <p className="break-words text-base font-semibold">{session.name}</p>
-                    <p className={`break-all text-sm ${state.isDark ? "text-slate-400" : "text-slate-500"}`}>
-                      {session.username}@{session.host}
-                    </p>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <SessionStatusChip
-                        status={session.status}
-                        label={state.mapSessionStatus(session.status)}
-                        isDark={state.isDark}
-                      />
-                    </div>
-                    {session.enhanced_enabled ? (
-                      <p className={`text-xs font-medium ${state.isDark ? "text-indigo-300" : "text-indigo-600"}`}>
-                        {state.t("增强持久化连接", "Enhanced persistent connection")}
-                      </p>
-                    ) : null}
-                    <p className={`text-xs ${state.isDark ? "text-slate-500" : "text-slate-400"}`}>{state.t("创建时间", "Created at")}: {new Date(session.started_at).toLocaleString()}</p>
-                    <p className={`text-xs ${state.isDark ? "text-slate-500" : "text-slate-400"}`}>{state.t("最近活动", "Last activity")}: {new Date(session.last_activity).toLocaleString()}</p>
-                    {session.disconnected_at ? (
-                      <p className={`text-xs ${state.isDark ? "text-slate-500" : "text-slate-400"}`}>
-                        {state.t("断开时间", "Disconnected at")}: {new Date(session.disconnected_at).toLocaleString()}
-                      </p>
-                    ) : null}
-                    {session.enhanced_enabled && session.status !== "active" && session.allow_auto_retry !== false ? (
-                      <p className={`text-xs ${state.isDark ? "text-slate-500" : "text-slate-400"}`}>
-                        {state.t("本轮重试", "Retry cycle")}: {session.retry_cycle_count ?? 0}/{state.enhancedRetryMaxAttempts}
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    {session.status === "active" ? (
-                      <Button variant="secondary" lightMode={!state.isDark} className="w-full" onClick={() => window.open(`/terminal/${session.id}`, "_blank")}>
-                        {state.t("打开会话", "Open session")}
-                      </Button>
-                    ) : null}
-                    {session.enhanced_enabled && session.status !== "active" && session.allow_auto_retry !== false ? (
-                      <Button
-                        variant="secondary"
-                        lightMode={!state.isDark}
-                        loading={state.isSystemRetrying(session) || !!state.retryingSessionIds[session.id]}
-                        className="w-full"
-                        onClick={() => state.handleRetryEnhancedSession(session.id)}
-                      >
-                        {state.t("重试连接", "Retry")}
-                      </Button>
-                    ) : null}
-                    <Button variant="ghost" lightMode={!state.isDark} className="w-full" onClick={() => state.handleDisconnectOrDelete(session)}>
-                      {session.status === "active" ? state.t("断开", "Disconnect") : state.t("删除", "Delete")}
-                    </Button>
-                  </div>
-                  {state.showSessionStatusSummary && session.status === "active" ? (
-                    <SessionStatusSummary
-                      entry={state.sessionStatusEntries[session.id]}
-                      isDark={state.isDark}
-                      t={state.t}
-                    />
-                  ) : null}
-                  <div className="space-y-2">
-                    <Input
-                      placeholder={state.t("备注", "Note")}
-                      value={noteValue}
-                      maxLength={1000}
-                      onChange={(event) => state.handleNoteChange(session.id, event.target.value)}
-                      className={!state.isDark ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400" : ""}
-                    />
-                    <div className={`flex flex-wrap items-center justify-between gap-2 text-xs ${state.isDark ? "text-slate-500" : "text-slate-400"}`}>
-                      <span>{state.t("最多 1000 字", "Up to 1000 characters")}</span>
-                      {noteValue.trim() !== (session.note ?? "") ? (
-                        <Button
-                          variant="secondary"
-                          lightMode={!state.isDark}
-                          onClick={() => state.handleSaveNote(session)}
-                          className="px-3 py-2 text-xs"
-                        >
-                          {state.t("保存备注", "Save note")}
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-          {state.filteredSessions.length === 0 ? (
-            <div className={`rounded-lg border px-4 py-5 text-sm ${state.isDark ? "border-slate-700 bg-slate-900/50 text-slate-400" : "border-slate-200 bg-white text-slate-500 shadow-sm"}`}>
-              <p className={`font-semibold ${state.isDark ? "text-slate-200" : "text-slate-800"}`}>
-                {state.search || state.filter !== "all"
-                  ? state.t("没有匹配的会话", "No matching sessions")
-                  : state.t("还没有会话", "No sessions yet")}
-              </p>
-              <p className="mt-1">
-                {state.search || state.filter !== "all"
-                  ? state.t("调整搜索词或状态筛选后重试。", "Adjust the search term or status filter and try again.")
-                  : state.t("从已保存连接启动会话，或先新增 SSH 连接。", "Start a session from a saved connection, or add an SSH connection first.")}
-              </p>
-            </div>
-          ) : null}
+          {state.viewMode === "grouped" ? (
+            <SessionGroupedList state={state} layout="mobile" />
+          ) : (
+            <>
+              {state.filteredSessions.map((session) => (
+                <SessionCard key={session.id} state={state} session={session} layout="mobile" />
+              ))}
+              {state.filteredSessions.length === 0 ? <SessionEmptyState state={state} /> : null}
+            </>
+          )}
         </div>
 
         <SessionsConnectionsPanel state={state} />

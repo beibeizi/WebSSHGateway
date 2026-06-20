@@ -1,6 +1,7 @@
 import React from "react";
 import { cn } from "../../lib/utils";
 import type { SessionStatusEntry } from "./useSessionStatusSummary";
+import { formatBytesPerSecond } from "./sessionsUtils";
 
 type SessionStatusSummaryProps = {
   entry?: SessionStatusEntry;
@@ -16,18 +17,6 @@ type MetricCardProps = {
   accentClassName: string;
   muted?: boolean;
 };
-
-function formatSpeed(bytesPerSec: number): string {
-  if (bytesPerSec <= 0) {
-    return "0 B/s";
-  }
-
-  const units = ["B/s", "KB/s", "MB/s", "GB/s"];
-  const base = 1024;
-  const unitIndex = Math.min(Math.floor(Math.log(bytesPerSec) / Math.log(base)), units.length - 1);
-  const value = bytesPerSec / Math.pow(base, unitIndex);
-  return `${value.toFixed(value >= 100 ? 0 : 1)} ${units[unitIndex]}`;
-}
 
 function MetricCard({ label, value, percent, isDark, accentClassName, muted = false }: MetricCardProps) {
   return (
@@ -110,10 +99,10 @@ export function SessionStatusSummary({ entry, isDark, t }: SessionStatusSummaryP
             </span>
             <div className="flex flex-wrap items-center gap-4 text-sm font-medium">
               <span className={isDark ? "text-emerald-300" : "text-emerald-600"}>
-                ↑ {formatSpeed(network.upload_speed)}
+                ↑ {formatBytesPerSecond(network.upload_speed)}
               </span>
               <span className={isDark ? "text-sky-300" : "text-sky-600"}>
-                ↓ {formatSpeed(network.download_speed)}
+                ↓ {formatBytesPerSecond(network.download_speed)}
               </span>
             </div>
           </div>

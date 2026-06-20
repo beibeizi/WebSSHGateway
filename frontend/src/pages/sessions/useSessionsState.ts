@@ -30,6 +30,7 @@ export function useSessionsState() {
   const [sessions, setSessions] = React.useState<Session[]>([]);
   const [filter, setFilter] = React.useState("all");
   const [search, setSearch] = React.useState("");
+  const [viewMode, setViewMode] = React.useState<"list" | "grouped">("list");
   const [loading, setLoading] = React.useState(true);
   const [form, setForm] = React.useState({
     name: "",
@@ -528,6 +529,8 @@ export function useSessionsState() {
     setFilter,
     search,
     setSearch,
+    viewMode,
+    setViewMode,
     loading,
     form,
     setForm,
