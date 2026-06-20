@@ -6,6 +6,7 @@ import type { SessionsState } from "./useSessionsState";
 import { SessionsConnectionsPanel } from "./SessionsConnectionsPanel";
 import { SessionsDialogs } from "./SessionsDialogs";
 import { SessionStatusSummary } from "./SessionStatusSummary";
+import { SessionStatusChip } from "./SessionStatusChip";
 import { clearAuthStorage } from "../../lib/api";
 
 type SessionsMobileProps = {
@@ -163,14 +164,20 @@ export function SessionsMobile({ state }: SessionsMobileProps) {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <div>
-                    <p className="text-base font-semibold">{session.name}</p>
-                    <p className={`text-sm ${state.isDark ? "text-slate-400" : "text-slate-500"}`}>
+                  <div className="min-w-0">
+                    <p className="break-words text-base font-semibold">{session.name}</p>
+                    <p className={`break-all text-sm ${state.isDark ? "text-slate-400" : "text-slate-500"}`}>
                       {session.username}@{session.host}
                     </p>
                   </div>
                   <div className="space-y-1">
-                    <p className={`text-xs ${state.isDark ? "text-slate-500" : "text-slate-400"}`}>{state.t("状态", "Status")}: {state.mapSessionStatus(session.status)}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <SessionStatusChip
+                        status={session.status}
+                        label={state.mapSessionStatus(session.status)}
+                        isDark={state.isDark}
+                      />
+                    </div>
                     {session.enhanced_enabled ? (
                       <p className={`text-xs font-medium ${state.isDark ? "text-indigo-300" : "text-indigo-600"}`}>
                         {state.t("增强持久化连接", "Enhanced persistent connection")}
@@ -225,7 +232,7 @@ export function SessionsMobile({ state }: SessionsMobileProps) {
                       onChange={(event) => state.handleNoteChange(session.id, event.target.value)}
                       className={!state.isDark ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400" : ""}
                     />
-                    <div className={`flex items-center justify-between text-xs ${state.isDark ? "text-slate-500" : "text-slate-400"}`}>
+                    <div className={`flex flex-wrap items-center justify-between gap-2 text-xs ${state.isDark ? "text-slate-500" : "text-slate-400"}`}>
                       <span>{state.t("最多 1000 字", "Up to 1000 characters")}</span>
                       {noteValue.trim() !== (session.note ?? "") ? (
                         <Button
@@ -244,7 +251,18 @@ export function SessionsMobile({ state }: SessionsMobileProps) {
             );
           })}
           {state.filteredSessions.length === 0 ? (
-            <div className={`text-sm ${state.isDark ? "text-slate-500" : "text-slate-400"}`}>{state.t("暂无会话", "No sessions")}</div>
+            <div className={`rounded-lg border px-4 py-5 text-sm ${state.isDark ? "border-slate-700 bg-slate-900/50 text-slate-400" : "border-slate-200 bg-white text-slate-500 shadow-sm"}`}>
+              <p className={`font-semibold ${state.isDark ? "text-slate-200" : "text-slate-800"}`}>
+                {state.search || state.filter !== "all"
+                  ? state.t("没有匹配的会话", "No matching sessions")
+                  : state.t("还没有会话", "No sessions yet")}
+              </p>
+              <p className="mt-1">
+                {state.search || state.filter !== "all"
+                  ? state.t("调整搜索词或状态筛选后重试。", "Adjust the search term or status filter and try again.")
+                  : state.t("从已保存连接启动会话，或先新增 SSH 连接。", "Start a session from a saved connection, or add an SSH connection first.")}
+              </p>
+            </div>
           ) : null}
         </div>
 

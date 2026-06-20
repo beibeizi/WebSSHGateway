@@ -1,4 +1,5 @@
 import React from "react";
+import { Info } from "lucide-react";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { Input } from "../../components/Input";
@@ -135,6 +136,7 @@ export function SessionsConnectionsPanel({ state }: SessionsConnectionsPanelProp
                 variant={state.form.auth_type === "password" ? "primary" : "secondary"}
                 lightMode={!state.isDark}
                 onClick={() => state.setForm({ ...state.form, auth_type: "password" })}
+                aria-pressed={state.form.auth_type === "password"}
               >
                 {state.t("密码", "Password")}
               </Button>
@@ -143,6 +145,7 @@ export function SessionsConnectionsPanel({ state }: SessionsConnectionsPanelProp
                 variant={state.form.auth_type === "private_key" ? "primary" : "secondary"}
                 lightMode={!state.isDark}
                 onClick={() => state.setForm({ ...state.form, auth_type: "private_key" })}
+                aria-pressed={state.form.auth_type === "private_key"}
               >
                 {state.t("私钥", "Private key")}
               </Button>
@@ -169,7 +172,7 @@ export function SessionsConnectionsPanel({ state }: SessionsConnectionsPanelProp
                   </label>
                   <textarea
                     id={createPrivateKeyId}
-                    className={`min-h-[120px] w-full rounded-md border px-3 py-2 text-sm ${state.isDark ? "border-slate-700 bg-slate-900 text-slate-100" : "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"}`}
+                    className={`min-h-[120px] w-full rounded-md border px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 ${state.isDark ? "border-slate-700 bg-slate-900 text-slate-100 placeholder:text-slate-500" : "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"}`}
                     placeholder={state.t("粘贴私钥内容", "Paste private key content")}
                     value={state.form.private_key}
                     onChange={(event) => state.setForm({ ...state.form, private_key: event.target.value })}
@@ -257,6 +260,7 @@ export function SessionsConnectionsPanel({ state }: SessionsConnectionsPanelProp
                     variant={state.editForm.auth_type === "password" ? "primary" : "secondary"}
                     lightMode={!state.isDark}
                     onClick={() => state.setEditForm({ ...state.editForm, auth_type: "password" })}
+                    aria-pressed={state.editForm.auth_type === "password"}
                   >
                     {state.t("密码", "Password")}
                   </Button>
@@ -265,6 +269,7 @@ export function SessionsConnectionsPanel({ state }: SessionsConnectionsPanelProp
                     variant={state.editForm.auth_type === "private_key" ? "primary" : "secondary"}
                     lightMode={!state.isDark}
                     onClick={() => state.setEditForm({ ...state.editForm, auth_type: "private_key" })}
+                    aria-pressed={state.editForm.auth_type === "private_key"}
                   >
                     {state.t("私钥", "Private key")}
                   </Button>
@@ -292,7 +297,7 @@ export function SessionsConnectionsPanel({ state }: SessionsConnectionsPanelProp
                       </label>
                       <textarea
                         id={editPrivateKeyId}
-                        className={`min-h-[80px] w-full rounded-md border px-3 py-2 text-sm ${state.isDark ? "border-slate-700 bg-slate-900 text-slate-100" : "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"}`}
+                        className={`min-h-[80px] w-full rounded-md border px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 ${state.isDark ? "border-slate-700 bg-slate-900 text-slate-100 placeholder:text-slate-500" : "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"}`}
                         placeholder={state.t("留空则保持原私钥", "Leave empty to keep current private key")}
                         value={state.editForm.private_key}
                         onChange={(event) => state.setEditForm({ ...state.editForm, private_key: event.target.value })}
@@ -345,11 +350,12 @@ export function SessionsConnectionsPanel({ state }: SessionsConnectionsPanelProp
                     {conn.remote_probe_status === "failed" && conn.remote_probe_error ? (
                       <button
                         type="button"
-                        className={`inline-flex h-11 w-11 items-center justify-center rounded-full border text-xs font-bold ${state.isDark ? "border-rose-400/50 text-rose-200" : "border-rose-300 text-rose-700"}`}
+                        className={`inline-flex h-11 w-11 items-center justify-center rounded-full border transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${state.isDark ? "border-rose-400/50 text-rose-200 hover:bg-rose-500/10" : "border-rose-300 text-rose-700 hover:bg-rose-50"}`}
                         title={conn.remote_probe_error}
+                        aria-label={state.t("查看验证失败原因", "View verification failure reason")}
                         onClick={() => state.push(conn.remote_probe_error || state.t("验证失败", "Verification failed"))}
                       >
-                        ?
+                        <Info className="h-4 w-4" aria-hidden="true" />
                       </button>
                     ) : null}
                   </div>
@@ -372,7 +378,7 @@ export function SessionsConnectionsPanel({ state }: SessionsConnectionsPanelProp
                     disabled={state.connectingId !== null}
                     onClick={() => state.handleCreateSession(conn.id)}
                   >
-                    {state.t("创建新的连接", "Create new connection")}
+                    {state.t("启动会话", "Start session")}
                   </Button>
                   {conn.remote_probe_status === "failed" || conn.remote_probe_status === "stale" || conn.remote_probe_status === "verifying" ? (
                     <Button
@@ -381,7 +387,7 @@ export function SessionsConnectionsPanel({ state }: SessionsConnectionsPanelProp
                       disabled={state.connectingId !== null}
                       onClick={() => state.handleCreateSession(conn.id, { force: true })}
                     >
-                      {state.t("强制尝试", "Force")}
+                      {state.t("强制启动", "Force start")}
                     </Button>
                   ) : null}
                   <Button

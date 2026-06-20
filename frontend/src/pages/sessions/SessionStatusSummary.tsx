@@ -37,7 +37,7 @@ function MetricCard({ label, value, percent, isDark, accentClassName, muted = fa
       }`}
     >
       <div className="flex items-center justify-between gap-3">
-        <span className={`text-[11px] uppercase tracking-[0.12em] ${isDark ? "text-slate-500" : "text-slate-400"}`}>
+        <span className={`text-xs font-medium ${isDark ? "text-slate-400" : "text-slate-500"}`}>
           {label}
         </span>
         <span className={cn("text-sm font-semibold", muted ? (isDark ? "text-slate-400" : "text-slate-500") : "")}>
@@ -105,7 +105,7 @@ export function SessionStatusSummary({ entry, isDark, t }: SessionStatusSummaryP
         />
         <div className={`rounded-md border px-3 py-2 md:col-span-3 ${isDark ? "border-slate-700 bg-slate-950/60" : "border-slate-200 bg-white"}`}>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <span className={`text-[11px] uppercase tracking-[0.12em] ${isDark ? "text-slate-500" : "text-slate-400"}`}>
+            <span className={`text-xs font-medium ${isDark ? "text-slate-400" : "text-slate-500"}`}>
               {t("网络", "Network")}
             </span>
             <div className="flex flex-wrap items-center gap-4 text-sm font-medium">
