@@ -104,7 +104,7 @@ export function SessionGroupHeader({ state, group, expanded, onToggle }: Session
       onClick={onToggle}
     >
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex min-w-0 gap-3">
+        <div className="flex min-w-0 flex-1 gap-3">
           <span
             className={cn(
               "mt-0.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border",
@@ -133,7 +133,7 @@ export function SessionGroupHeader({ state, group, expanded, onToggle }: Session
             </div>
           </div>
         </div>
-        <div className={`rounded-md border px-3 py-2 text-xs ${state.isDark ? "border-slate-700 bg-slate-950/50" : "border-slate-200 bg-white"}`}>
+        <div className={`w-full rounded-md border px-3 py-2 text-xs lg:w-80 lg:shrink-0 ${state.isDark ? "border-slate-700 bg-slate-950/50" : "border-slate-200 bg-white"}`}>
           <div className={`mb-1 font-medium ${state.isDark ? "text-slate-400" : "text-slate-500"}`}>
             {state.t("系统状态", "System status")}
           </div>

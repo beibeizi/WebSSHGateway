@@ -45,7 +45,7 @@ export function SessionGroupedList({ state, layout }: SessionGroupedListProps) {
             key={group.connectionId}
             className={cn(
               "overflow-hidden rounded-lg border",
-              state.isDark ? "border-slate-700 bg-slate-900/50" : "border-slate-200 bg-white shadow-sm"
+              state.isDark ? "border-slate-700 bg-slate-900/45" : "border-slate-200 bg-white"
             )}
           >
             <SessionGroupHeader
@@ -60,7 +60,7 @@ export function SessionGroupedList({ state, layout }: SessionGroupedListProps) {
               }}
             />
             {expanded ? (
-              <div className={`border-t p-4 ${state.isDark ? "border-slate-700 bg-slate-950/20" : "border-slate-200 bg-slate-50/70"}`}>
+              <div className={`border-t p-3 sm:p-4 ${state.isDark ? "border-slate-700 bg-slate-950/15" : "border-slate-200 bg-slate-50/50"}`}>
                 <div className={layout === "mobile" ? "grid gap-4" : "grid gap-4"}>
                   {group.sessions.map((session) => (
                     <SessionCard

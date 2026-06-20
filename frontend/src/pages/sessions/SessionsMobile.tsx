@@ -81,6 +81,7 @@ export function SessionsMobile({ state }: SessionsMobileProps) {
             onChange={state.setViewMode}
             isDark={state.isDark}
             t={state.t}
+            fullWidth
           />
           <div className="flex gap-2 overflow-x-auto pb-1">
             {[

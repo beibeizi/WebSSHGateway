@@ -85,53 +85,59 @@ export function SessionsDesktop({ state }: SessionsDesktopProps) {
 
         <div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
           <div className="space-y-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <Input
-                placeholder={state.t("搜索会话名称", "Search session name")}
-                value={state.search}
-                onChange={(event) => state.setSearch(event.target.value)}
-                className={`max-w-xs ${state.isDark ? "" : "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"}`}
-              />
-              <SessionViewModeToggle
-                value={state.viewMode}
-                onChange={state.setViewMode}
-                isDark={state.isDark}
-                t={state.t}
-              />
-              <div className="flex gap-2">
-                {[
-                  { value: "all", label: state.t("全部", "All") },
-                  { value: "active", label: state.t("在线", "Active") },
-                  { value: "disconnected", label: state.t("离线", "Disconnected") },
-                ].map((item) => (
+            <div className={`rounded-lg border p-3 ${state.isDark ? "border-slate-800 bg-slate-900/35" : "border-slate-200 bg-white shadow-sm"}`}>
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+                  <Input
+                    placeholder={state.t("搜索会话名称", "Search session name")}
+                    value={state.search}
+                    onChange={(event) => state.setSearch(event.target.value)}
+                    className={`min-w-[220px] max-w-sm flex-1 ${state.isDark ? "" : "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"}`}
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { value: "all", label: state.t("全部", "All") },
+                      { value: "active", label: state.t("在线", "Active") },
+                      { value: "disconnected", label: state.t("离线", "Disconnected") },
+                    ].map((item) => (
+                      <Button
+                        key={item.value}
+                        variant={state.filter === item.value ? "primary" : "secondary"}
+                        lightMode={!state.isDark}
+                        onClick={() => state.setFilter(item.value)}
+                      >
+                        {item.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                  <SessionViewModeToggle
+                    value={state.viewMode}
+                    onChange={state.setViewMode}
+                    isDark={state.isDark}
+                    t={state.t}
+                  />
                   <Button
-                    key={item.value}
-                    variant={state.filter === item.value ? "primary" : "secondary"}
+                    variant="secondary"
                     lightMode={!state.isDark}
-                    onClick={() => state.setFilter(item.value)}
+                    onClick={() => {
+                      window.location.href = "/settings";
+                    }}
                   >
-                    {item.label}
+                    {state.t("系统设置", "System Settings")}
                   </Button>
-                ))}
-                <Button
-                  variant="secondary"
-                  lightMode={!state.isDark}
-                  onClick={() => {
-                    window.location.href = "/settings";
-                  }}
-                >
-                  {state.t("系统设置", "System Settings")}
-                </Button>
-                <Button
-                  variant="secondary"
-                  lightMode={!state.isDark}
-                  onClick={() => {
-                    window.location.href = "/logs";
-                  }}
-                >
-                  <FileText className="h-4 w-4" />
-                  {state.t("日志", "Logs")}
-                </Button>
+                  <Button
+                    variant="secondary"
+                    lightMode={!state.isDark}
+                    onClick={() => {
+                      window.location.href = "/logs";
+                    }}
+                  >
+                    <FileText className="h-4 w-4" />
+                    {state.t("日志", "Logs")}
+                  </Button>
+                </div>
               </div>
             </div>
 
