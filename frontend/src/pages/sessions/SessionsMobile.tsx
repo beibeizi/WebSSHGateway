@@ -1,5 +1,5 @@
 import React from "react";
-import { FileText } from "lucide-react";
+import { FileText, Settings } from "lucide-react";
 import { Button } from "../../components/Button";
 import { Input } from "../../components/Input";
 import type { SessionsState } from "./useSessionsState";
@@ -33,7 +33,7 @@ export function SessionsMobile({ state }: SessionsMobileProps) {
               variant="ghost"
               lightMode={!state.isDark}
               onClick={state.toggleLanguage}
-              className="px-3 py-2 text-xs"
+              className="min-h-11 px-3 py-2 text-xs"
             >
               {state.language === "en-US" ? "中文" : "EN"}
             </Button>
@@ -43,7 +43,7 @@ export function SessionsMobile({ state }: SessionsMobileProps) {
               variant="ghost"
               lightMode={!state.isDark}
               onClick={state.toggleTheme}
-              className="px-3 py-2 text-xs"
+              className="min-h-11 px-3 py-2 text-xs"
             >
               {state.isDark ? state.t("浅色", "Light") : state.t("深色", "Dark")}
             </Button>
@@ -51,7 +51,7 @@ export function SessionsMobile({ state }: SessionsMobileProps) {
               variant="secondary"
               lightMode={!state.isDark}
               onClick={() => state.setPasswordDialogOpen(true)}
-              className="px-3 py-2 text-xs"
+              className="min-h-11 px-3 py-2 text-xs"
             >
               {state.t("修改密码", "Change password")}
             </Button>
@@ -62,7 +62,7 @@ export function SessionsMobile({ state }: SessionsMobileProps) {
                 clearAuthStorage();
                 window.location.href = "/";
               }}
-              className="px-3 py-2 text-xs"
+              className="min-h-11 px-3 py-2 text-xs"
             >
               {state.t("退出登录", "Sign out")}
             </Button>
@@ -74,52 +74,57 @@ export function SessionsMobile({ state }: SessionsMobileProps) {
             placeholder={state.t("搜索会话名称", "Search session name")}
             value={state.search}
             onChange={(event) => state.setSearch(event.target.value)}
-            className={`${state.isDark ? "" : "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"}`}
+            className={`min-h-11 ${state.isDark ? "" : "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"}`}
           />
-          <SessionViewModeToggle
-            value={state.viewMode}
-            onChange={state.setViewMode}
-            isDark={state.isDark}
-            t={state.t}
-            fullWidth
-          />
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {[
-              { value: "all", label: state.t("全部", "All") },
-              { value: "active", label: state.t("在线", "Active") },
-              { value: "disconnected", label: state.t("离线", "Disconnected") },
-            ].map((item) => (
+          <div className={`space-y-3 rounded-lg border p-3 ${state.isDark ? "border-slate-800 bg-slate-900/40" : "border-slate-200 bg-white"}`}>
+            <SessionViewModeToggle
+              value={state.viewMode}
+              onChange={state.setViewMode}
+              isDark={state.isDark}
+              t={state.t}
+              fullWidth
+            />
+            <div className="grid grid-cols-3 gap-2" role="group" aria-label={state.t("会话状态筛选", "Session status filter")}>
+              {[
+                { value: "all", label: state.t("全部", "All") },
+                { value: "active", label: state.t("在线", "Active") },
+                { value: "disconnected", label: state.t("离线", "Disconnected") },
+              ].map((item) => (
+                <Button
+                  key={item.value}
+                  variant={state.filter === item.value ? "primary" : "secondary"}
+                  lightMode={!state.isDark}
+                  onClick={() => state.setFilter(item.value)}
+                  className="min-h-11 w-full min-w-0 px-2 py-2 text-xs leading-tight"
+                >
+                  <span className="min-w-0 whitespace-normal text-center">{item.label}</span>
+                </Button>
+              ))}
+            </div>
+            <div className={`grid grid-cols-2 gap-2 border-t pt-3 ${state.isDark ? "border-slate-800" : "border-slate-200"}`} role="group" aria-label={state.t("系统入口", "System entry points")}>
               <Button
-                key={item.value}
-                variant={state.filter === item.value ? "primary" : "secondary"}
+                variant="secondary"
                 lightMode={!state.isDark}
-                onClick={() => state.setFilter(item.value)}
-                className="min-h-11 px-3 py-2 text-xs whitespace-nowrap"
+                onClick={() => {
+                  window.location.href = "/settings";
+                }}
+                className="min-h-11 w-full min-w-0 px-2 py-2 text-xs leading-tight"
               >
-                {item.label}
+                <Settings className="h-4 w-4 shrink-0" />
+                <span className="min-w-0 whitespace-normal text-center">{state.t("系统设置", "System Settings")}</span>
               </Button>
-            ))}
-            <Button
-              variant="secondary"
-              lightMode={!state.isDark}
-              onClick={() => {
-                window.location.href = "/settings";
-              }}
-              className="min-h-11 px-3 py-2 text-xs whitespace-nowrap"
-            >
-              {state.t("系统设置", "System Settings")}
-            </Button>
-            <Button
-              variant="secondary"
-              lightMode={!state.isDark}
-              onClick={() => {
-                window.location.href = "/logs";
-              }}
-              className="min-h-11 px-3 py-2 text-xs whitespace-nowrap"
-            >
-              <FileText className="h-4 w-4" />
-              {state.t("日志", "Logs")}
-            </Button>
+              <Button
+                variant="secondary"
+                lightMode={!state.isDark}
+                onClick={() => {
+                  window.location.href = "/logs";
+                }}
+                className="min-h-11 w-full min-w-0 px-2 py-2 text-xs leading-tight"
+              >
+                <FileText className="h-4 w-4 shrink-0" />
+                <span className="min-w-0 whitespace-normal text-center">{state.t("日志", "Logs")}</span>
+              </Button>
+            </div>
           </div>
         </div>
 

@@ -45,9 +45,20 @@ function formatConnectionEndpoint(group: SessionGroup<Session, Connection>) {
   return port ? `${username}@${host}:${port}` : `${username}@${host}`;
 }
 
-function SessionGroupSystemPreview({ state, group }: { state: SessionsState; group: SessionGroup<Session, Connection> }) {
+function SessionGroupSystemPreview({
+  state,
+  group,
+  compact = false,
+}: {
+  state: SessionsState;
+  group: SessionGroup<Session, Connection>;
+  compact?: boolean;
+}) {
   const activeSession = group.representativeActiveSession;
-  const mutedClassName = state.isDark ? "text-slate-400" : "text-slate-500";
+  const mutedClassName = cn(
+    state.isDark ? "text-slate-400" : "text-slate-500",
+    compact ? "min-w-0 break-words text-xs" : ""
+  );
 
   if (!activeSession) {
     return <span className={mutedClassName}>{state.t("无在线采集", "No online collection")}</span>;
@@ -67,7 +78,10 @@ function SessionGroupSystemPreview({ state, group }: { state: SessionsState; gro
   }
 
   const { stats, network } = entry.summary;
-  const metricClassName = state.isDark ? "text-slate-200" : "text-slate-700";
+  const metricClassName = cn(
+    state.isDark ? "text-slate-200" : "text-slate-700",
+    compact ? "whitespace-nowrap" : ""
+  );
   const hint = entry.error
     ? state.t("上次采集", "Last sample")
     : entry.loading
@@ -75,16 +89,16 @@ function SessionGroupSystemPreview({ state, group }: { state: SessionsState; gro
       : "";
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+    <div className={cn("flex min-w-0 flex-wrap items-center gap-y-1", compact ? "gap-x-2 text-[11px] leading-5" : "gap-x-3")}>
       <span className={metricClassName}>CPU {stats.cpu.percent.toFixed(1)}%</span>
       <span className={metricClassName}>{state.t("内存", "Memory")} {stats.memory.percent.toFixed(1)}%</span>
-      <span className={state.isDark ? "text-emerald-300" : "text-emerald-600"}>
+      <span className={cn("whitespace-nowrap", state.isDark ? "text-emerald-300" : "text-emerald-600")}>
         ↑ {formatBytesPerSecond(network.upload_speed)}
       </span>
-      <span className={state.isDark ? "text-sky-300" : "text-sky-600"}>
+      <span className={cn("whitespace-nowrap", state.isDark ? "text-sky-300" : "text-sky-600")}>
         ↓ {formatBytesPerSecond(network.download_speed)}
       </span>
-      {hint ? <span className={`text-[11px] ${state.isDark ? "text-slate-500" : "text-slate-400"}`}>{hint}</span> : null}
+      {hint ? <span className={`whitespace-nowrap text-[11px] ${state.isDark ? "text-slate-500" : "text-slate-400"}`}>{hint}</span> : null}
     </div>
   );
 }
@@ -97,13 +111,13 @@ export function SessionGroupHeader({ state, group, expanded, onToggle }: Session
     <button
       type="button"
       className={cn(
-        "w-full px-4 py-4 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400",
+        "w-full px-3 py-3 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400 sm:px-4 sm:py-4",
         state.isDark ? "hover:bg-slate-900/80" : "hover:bg-slate-50"
       )}
       aria-expanded={expanded}
       onClick={onToggle}
     >
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+      <div className="flex flex-col gap-2.5 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 flex-1 gap-3">
           <span
             className={cn(
@@ -114,9 +128,9 @@ export function SessionGroupHeader({ state, group, expanded, onToggle }: Session
           >
             {expanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
           </span>
-          <div className="min-w-0 space-y-1">
+          <div className="min-w-0 flex-1 space-y-1.5">
             <div className="flex flex-wrap items-center gap-2">
-              <p className={`break-words text-base font-semibold ${state.isDark ? "text-slate-100" : "text-slate-900"}`}>
+              <p className={`min-w-0 max-w-full break-words text-base font-semibold ${state.isDark ? "text-slate-100" : "text-slate-900"}`}>
                 {connectionName}
               </p>
               <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${getProbeStatusClassName(state, group.connection?.remote_probe_status)}`}>
@@ -131,9 +145,17 @@ export function SessionGroupHeader({ state, group, expanded, onToggle }: Session
               <span>{state.t("离线", "Offline")} {group.offlineCount}</span>
               <span>{state.t("最近活动", "Last activity")}: {lastActivity}</span>
             </div>
+            <div className="mt-2 flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1 lg:hidden">
+              <span className={`shrink-0 text-xs font-medium ${state.isDark ? "text-slate-400" : "text-slate-500"}`}>
+                {state.t("系统状态", "System status")}
+              </span>
+              <div className="min-w-0 flex-1">
+                <SessionGroupSystemPreview state={state} group={group} compact />
+              </div>
+            </div>
           </div>
         </div>
-        <div className={`w-full rounded-md border px-3 py-2 text-xs lg:w-80 lg:shrink-0 ${state.isDark ? "border-slate-700 bg-slate-950/50" : "border-slate-200 bg-white"}`}>
+        <div className={`hidden rounded-md border px-3 py-2 text-xs lg:block lg:w-80 lg:shrink-0 ${state.isDark ? "border-slate-700 bg-slate-950/50" : "border-slate-200 bg-white"}`}>
           <div className={`mb-1 font-medium ${state.isDark ? "text-slate-400" : "text-slate-500"}`}>
             {state.t("系统状态", "System status")}
           </div>

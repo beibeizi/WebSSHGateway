@@ -37,7 +37,7 @@ export function SessionGroupedList({ state, layout }: SessionGroupedListProps) {
   }
 
   return (
-    <div className="grid gap-4">
+    <div className={layout === "mobile" ? "grid gap-3" : "grid gap-4"}>
       {groups.map((group) => {
         const expanded = expandedGroups[group.connectionId] ?? false;
         return (
@@ -45,7 +45,13 @@ export function SessionGroupedList({ state, layout }: SessionGroupedListProps) {
             key={group.connectionId}
             className={cn(
               "overflow-hidden rounded-lg border",
-              state.isDark ? "border-slate-700 bg-slate-900/45" : "border-slate-200 bg-white"
+              layout === "mobile"
+                ? state.isDark
+                  ? "border-slate-800 bg-slate-900/35"
+                  : "border-slate-200 bg-white"
+                : state.isDark
+                  ? "border-slate-700 bg-slate-900/45"
+                  : "border-slate-200 bg-white"
             )}
           >
             <SessionGroupHeader
@@ -60,8 +66,20 @@ export function SessionGroupedList({ state, layout }: SessionGroupedListProps) {
               }}
             />
             {expanded ? (
-              <div className={`border-t p-3 sm:p-4 ${state.isDark ? "border-slate-700 bg-slate-950/15" : "border-slate-200 bg-slate-50/50"}`}>
-                <div className={layout === "mobile" ? "grid gap-4" : "grid gap-4"}>
+              <div
+                className={cn(
+                  "border-t",
+                  layout === "mobile" ? "px-2 pb-2 pt-2" : "p-3 sm:p-4",
+                  layout === "mobile"
+                    ? state.isDark
+                      ? "border-slate-800 bg-transparent"
+                      : "border-slate-200 bg-transparent"
+                    : state.isDark
+                      ? "border-slate-700 bg-slate-950/15"
+                      : "border-slate-200 bg-slate-50/50"
+                )}
+              >
+                <div className={layout === "mobile" ? "grid gap-2.5" : "grid gap-4"}>
                   {group.sessions.map((session) => (
                     <SessionCard
                       key={session.id}
