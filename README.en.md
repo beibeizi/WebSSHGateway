@@ -32,6 +32,7 @@ A dedicated mobile layout provides touch-friendly interactions for terminal work
 - Browser terminal with real-time WebSocket streaming
 - Connection asset management with encrypted credentials
 - Session lifecycle management with reconnect and notes
+- Grouped session view: sessions can be grouped by connection/machine, with list/grouped view switching, persisted display preference, and machine status preview in group headers
 - Enhanced persistent session design powered by `tmux`, with keepalive and auto-retry
 - Mobile-friendly experience for phone browsers with touch-first layouts and controls
 - System monitoring for CPU, memory, network, process, and disk
