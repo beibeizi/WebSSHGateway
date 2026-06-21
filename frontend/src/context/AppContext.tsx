@@ -1,15 +1,12 @@
 import React from "react";
-import { clearAuthStorage, getStoredToken, getSystemSettings, GlobalSystemSettings, pingServer } from "../lib/api";
-import { AppLanguage, getStoredLanguage, LANGUAGE_STORAGE_KEY, saveLanguage } from "../lib/i18n";
+import { clearAuthStorage, getStoredToken, getSystemSettings, pingServer } from "../lib/api";
+import type { GlobalSystemSettings } from "../lib/api";
+import { getStoredLanguage, LANGUAGE_STORAGE_KEY, saveLanguage } from "../lib/i18n";
+import type { AppLanguage } from "../lib/i18n";
+import { AppContext } from "./AppContextCore";
+import type { AppContextType, NetworkProfile, Theme, UserInfo, WeakNetworkProfile } from "./AppContextCore";
 
-type Theme = "dark" | "light";
-export type NetworkProfile = "good" | "degraded" | "poor";
-type WeakNetworkProfile = Exclude<NetworkProfile, "good">;
-
-type UserInfo = {
-  id: string;
-  token: string;
-} | null;
+export type { NetworkProfile } from "./AppContextCore";
 
 type NetworkHint = {
   profile: WeakNetworkProfile;
@@ -25,33 +22,6 @@ const NETWORK_PROFILE_RANK: Record<NetworkProfile, number> = {
 function pickWorseProfile(a: NetworkProfile, b: NetworkProfile): NetworkProfile {
   return NETWORK_PROFILE_RANK[a] >= NETWORK_PROFILE_RANK[b] ? a : b;
 }
-
-type AppContextType = {
-  theme: Theme;
-  setTheme: (theme: Theme) => void;
-  toggleTheme: () => void;
-  language: AppLanguage;
-  setLanguage: (language: AppLanguage) => void;
-  toggleLanguage: () => void;
-  isDark: boolean;
-  user: UserInfo;
-  setUser: (user: UserInfo) => void;
-  logout: () => void;
-  isAuthenticated: boolean;
-  networkProfile: NetworkProfile;
-  networkLatency: number | null;
-  networkAverageLatency: number | null;
-  networkJitter: number;
-  networkPingErrorStreak: number;
-  reportNetworkHint: (profile: WeakNetworkProfile, ttlMs?: number) => void;
-  clearNetworkHint: () => void;
-  systemSettings: GlobalSystemSettings | null;
-  systemSettingsLoading: boolean;
-  refreshSystemSettings: () => Promise<GlobalSystemSettings | null>;
-  applySystemSettings: (settings: GlobalSystemSettings) => void;
-};
-
-const AppContext = React.createContext<AppContextType | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = React.useState<Theme>(() => {
@@ -114,6 +84,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const networkPingIntervalMs =
     networkProfile === "poor" ? 25000 : networkProfile === "degraded" ? 15000 : 10000;
+  const authenticatedUserId = user?.id ?? null;
 
   const setTheme = React.useCallback((newTheme: Theme) => {
     setThemeState(newTheme);
@@ -215,7 +186,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [networkHint]);
 
   React.useEffect(() => {
-    if (!user) {
+    if (!authenticatedUserId) {
       setNetworkLatency(null);
       setNetworkLatencySamples([]);
       setNetworkPingErrorStreak(0);
@@ -259,14 +230,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [user?.id, networkPingIntervalMs]);
+  }, [authenticatedUserId, networkPingIntervalMs]);
 
   React.useEffect(() => {
-    if (!user) {
+    if (!authenticatedUserId) {
       return;
     }
     void refreshSystemSettings();
-  }, [user?.id, refreshSystemSettings]);
+  }, [authenticatedUserId, refreshSystemSettings]);
 
   const value: AppContextType = {
     theme,
@@ -294,12 +265,4 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
-}
-
-export function useApp() {
-  const context = React.useContext(AppContext);
-  if (!context) {
-    throw new Error("useApp must be used within AppProvider");
-  }
-  return context;
 }

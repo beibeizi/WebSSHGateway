@@ -21,6 +21,7 @@ from app.schemas.api import (
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
+PASSWORD_RESET_CLI_MESSAGE = "Web 端不支持重置密码，请联系管理员使用 CLI 重置密码"
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -79,17 +80,10 @@ def request_password_reset(
 ) -> PasswordResetRequestResponse:
     username = payload.username.strip()
     user = db.execute(select(User).where(User.username == username)).scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
-
-    challenge = state.auth_service.create_password_reset_challenge(user.username)
-    logger.warning(
-        "Password reset verification code for user %s: %s (expires_at=%s, attempts=%s)",
-        user.username,
-        challenge.code,
-        challenge.expires_at.isoformat(),
-        challenge.attempts_remaining,
-    )
+    if user:
+        logger.warning("Password reset requested for user %s, but web reset is disabled; use CLI instead", user.username)
+    else:
+        logger.warning("Password reset requested for missing user %s; returning generic success to avoid enumeration", username)
     return PasswordResetRequestResponse(status="ok", expires_in_seconds=300)
 
 
@@ -101,17 +95,8 @@ def confirm_password_reset(
 ) -> StatusResponse:
     username = payload.username.strip()
     user = db.execute(select(User).where(User.username == username)).scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
-
-    try:
-        state.auth_service.verify_password_reset_challenge(user.username, payload.verification_code)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-
-    new_password = state.auth_service.generate_random_password()
-    user.password_hash = state.auth_service.hash_password(new_password)
-    user.must_change_password = True
-    state.auth_service.clear_lock_state(user)
-    logger.warning("Password reset success for user %s, new temporary password: %s", user.username, new_password)
-    return StatusResponse(status="ok")
+    if user:
+        logger.warning("Password reset confirmation requested for user %s, but web reset is disabled; use CLI instead", user.username)
+    else:
+        logger.warning("Password reset confirmation requested for missing user %s; instructing CLI fallback", username)
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=PASSWORD_RESET_CLI_MESSAGE)

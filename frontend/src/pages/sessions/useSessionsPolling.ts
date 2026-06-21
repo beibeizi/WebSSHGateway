@@ -10,7 +10,7 @@ type UseSessionsPollingOptions = {
   setNoteDrafts: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   push: (message: string) => void;
   t: (zh: string, en: string) => string;
-  reportNetworkHint: (profile: "good" | "degraded" | "poor", durationMs: number) => void;
+  reportNetworkHint: (profile: "degraded" | "poor", durationMs: number) => void;
 };
 
 export function useSessionsPolling({

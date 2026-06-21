@@ -1,7 +1,7 @@
 import React from "react";
 import type { Session } from "../../lib/api";
 import { updateSessionOrder } from "../../lib/api";
-import { mergeVisibleOrder, moveItem } from "./sessionsUtils";
+import { mergeVisibleOrder, moveItem, reorderSessionsWithinConnection } from "./sessionsUtils";
 
 type UseSessionsOrderingOptions = {
   orderedSessions: Session[];
@@ -90,6 +90,10 @@ export function useSessionsOrdering({
     )));
   }, [setSessions]);
 
+  const getVisibleOrderIds = React.useCallback((scopeSessions?: Session[]) => {
+    return (scopeSessions ?? filteredSessions).map((session) => session.id);
+  }, [filteredSessions]);
+
   const handleDragStart = React.useCallback((sessionId: string, event: React.DragEvent<HTMLButtonElement>) => {
     if (savingOrder) {
       event.preventDefault();
@@ -100,28 +104,38 @@ export function useSessionsOrdering({
     setDraggingSessionId(sessionId);
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", sessionId);
-  }, [savingOrder]);
+  }, [draggingRef, savingOrder]);
 
-  const handleDragOver = React.useCallback((sessionId: string, event: React.DragEvent<HTMLDivElement>) => {
+  const handleDragOver = React.useCallback((
+    sessionId: string,
+    event: React.DragEvent<HTMLDivElement>,
+    scopeSessions?: Session[]
+  ) => {
     if (!draggingSessionId || draggingSessionId === sessionId) {
+      return;
+    }
+    const visibleOrderIds = getVisibleOrderIds(scopeSessions);
+    if (!visibleOrderIds.includes(draggingSessionId) || !visibleOrderIds.includes(sessionId)) {
       return;
     }
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
-    const visibleOrderIds = filteredSessions.map((session) => session.id);
-    if (!visibleOrderIds.includes(draggingSessionId) || !visibleOrderIds.includes(sessionId)) {
-      return;
-    }
     const fromIndex = visibleOrderIds.indexOf(draggingSessionId);
     const toIndex = visibleOrderIds.indexOf(sessionId);
     if (fromIndex === toIndex) {
       return;
     }
     const nextVisibleOrder = moveItem(visibleOrderIds, fromIndex, toIndex);
-    const nextFullOrder = mergeVisibleOrder(orderedIdsRef.current, visibleOrderIds, nextVisibleOrder);
+    const targetSession = scopeSessions?.find((session) => session.id === sessionId);
+    const nextFullOrder = targetSession
+      ? reorderSessionsWithinConnection(orderedIdsRef.current, scopeSessions ?? [], targetSession.connection_id, draggingSessionId, sessionId)
+      : mergeVisibleOrder(orderedIdsRef.current, visibleOrderIds, nextVisibleOrder);
+    if (nextFullOrder === orderedIdsRef.current) {
+      return;
+    }
     applySessionOrder(nextFullOrder);
     orderDirtyRef.current = true;
-  }, [applySessionOrder, draggingSessionId, filteredSessions]);
+  }, [applySessionOrder, draggingSessionId, getVisibleOrderIds]);
 
   const handleDragEnd = React.useCallback(async () => {
     draggingRef.current = false;
@@ -131,13 +145,17 @@ export function useSessionsOrdering({
     }
     orderDirtyRef.current = false;
     await persistSessionOrder(orderedIdsRef.current);
-  }, [persistSessionOrder]);
+  }, [draggingRef, persistSessionOrder]);
 
-  const handleMoveSession = React.useCallback(async (sessionId: string, direction: "up" | "down") => {
+  const handleMoveSession = React.useCallback(async (
+    sessionId: string,
+    direction: "up" | "down",
+    scopeSessions?: Session[]
+  ) => {
     if (savingOrder) {
       return;
     }
-    const visibleOrderIds = filteredSessions.map((session) => session.id);
+    const visibleOrderIds = getVisibleOrderIds(scopeSessions);
     const currentIndex = visibleOrderIds.indexOf(sessionId);
     if (currentIndex < 0) {
       return;
@@ -147,10 +165,17 @@ export function useSessionsOrdering({
       return;
     }
     const nextVisibleOrder = moveItem(visibleOrderIds, currentIndex, targetIndex);
-    const nextFullOrder = mergeVisibleOrder(orderedIdsRef.current, visibleOrderIds, nextVisibleOrder);
+    const currentSession = scopeSessions?.find((session) => session.id === sessionId);
+    const targetSessionId = visibleOrderIds[targetIndex];
+    const nextFullOrder = currentSession
+      ? reorderSessionsWithinConnection(orderedIdsRef.current, scopeSessions ?? [], currentSession.connection_id, sessionId, targetSessionId)
+      : mergeVisibleOrder(orderedIdsRef.current, visibleOrderIds, nextVisibleOrder);
+    if (nextFullOrder === orderedIdsRef.current) {
+      return;
+    }
     applySessionOrder(nextFullOrder);
     await persistSessionOrder(nextFullOrder);
-  }, [applySessionOrder, filteredSessions, persistSessionOrder, savingOrder]);
+  }, [applySessionOrder, getVisibleOrderIds, persistSessionOrder, savingOrder]);
 
   return {
     draggingSessionId,

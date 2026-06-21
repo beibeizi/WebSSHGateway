@@ -72,6 +72,13 @@ class ConnectionResponse(BaseModel):
     port: int
     username: str
     auth_type: str
+    remote_arch: Optional[str] = None
+    remote_os: Optional[str] = None
+    remote_probe_status: str = "unverified"
+    remote_probe_error: Optional[str] = None
+    remote_probe_checked_at: Optional[datetime] = None
+    enhanced_supported: bool = False
+    enhanced_probe_error: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

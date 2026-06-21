@@ -12,9 +12,10 @@ import {
   chmodPath,
   uploadBatch,
 } from "../lib/api";
-import { useApp } from "../context/AppContext";
-import type { NetworkProfile } from "../context/AppContext";
-import { useToast } from "./Toast";
+import { Upload } from "lucide-react";
+import { useApp } from "../context/AppContextCore";
+import type { NetworkProfile } from "../context/AppContextCore";
+import { useToast } from "./ToastContext";
 import { collectDroppedFiles, createTarGzArchive, snapshotDropPayload } from "../lib/upload";
 
 function localizeText(language: string, zh: string, en: string): string {
@@ -128,7 +129,6 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
   const [error, setError] = React.useState<string | null>(null);
   const [compress, setCompress] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
-  const [selectedFile, setSelectedFile] = React.useState<FileInfo | null>(null);
   const [selectedFiles, setSelectedFiles] = React.useState<Set<string>>(new Set());
   const [downloading, setDownloading] = React.useState(false);
   const [downloadStats, setDownloadStats] = React.useState<DownloadStats | null>(null);
@@ -515,7 +515,7 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
         cancelled: uploadCancelledRef.current,
       };
     },
-    [mapBatchFailures, uploadBatchWithRetry, t]
+    [mapBatchFailures, uploadBatchWithRetry, uploadBatchConcurrent, t]
   );
 
   const handleUploadFiles = React.useCallback(async (allFiles: Array<{ file: File; path: string }>) => {
@@ -629,7 +629,7 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
       setUploadStats(INITIAL_UPLOAD_STATS);
       setUploadStage("batch");
     }
-  }, [sessionId, selectedPath, compress, push, loadDirectory, uploadFilesByBatch, t, language]);
+  }, [sessionId, selectedPath, compress, push, loadDirectory, uploadFilesByBatch, createTarGz, t, language]);
 
   // 处理文件拖拽上传
   const handleDrop = React.useCallback(async (e: React.DragEvent) => {
@@ -890,7 +890,7 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
     } catch (err) {
       push(err instanceof Error ? err.message : t("操作失败", "Operation failed"));
     }
-  }, [dialog, dialogInput, sessionId, selectedPath, push, loadDirectory, t]);
+  }, [dialog, dialogInput, sessionId, selectedPath, push, loadDirectory, t, chmodRecursive]);
 
   React.useEffect(() => {
     if (contextMenu) {
@@ -916,15 +916,6 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
       setIsDragging(false);
     }
   }, []);
-
-  // 处理下载
-  const handleDownload = React.useCallback(async () => {
-    if (selectedFiles.size === 0) return;
-    const filesToDownload = Array.from(selectedFiles)
-      .map(path => files.find(f => f.path === path))
-      .filter(Boolean) as FileInfo[];
-    await downloadItemsWithProgress(filesToDownload);
-  }, [selectedFiles, files, downloadItemsWithProgress]);
 
   // 列宽调整
   React.useEffect(() => {
@@ -966,10 +957,8 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
         newSelected.add(file.path);
       }
       setSelectedFiles(newSelected);
-      setSelectedFile(file);
     } else {
       // 鍗曢€?
-      setSelectedFile(file);
       setSelectedFiles(new Set([file.path]));
 
       // 閫氱煡鐖剁粍浠堕€変腑鐨勬枃浠?
@@ -997,7 +986,6 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
     if (!parentPath) {
       return;
     }
-    setSelectedFile(null);
     setSelectedFiles(new Set());
     onFileSelect?.(null);
     loadDirectory(parentPath, true, { preferCache: true });
@@ -1005,16 +993,57 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
   }, [parentPath, onFileSelect, loadDirectory, expandTreeToPath]);
 
   const handleParentItemClick = React.useCallback(() => {
-    setSelectedFile(null);
     setSelectedFiles(new Set());
     onFileSelect?.(null);
   }, [onFileSelect]);
 
   const handleClearSelection = React.useCallback(() => {
-    setSelectedFile(null);
     setSelectedFiles(new Set());
     onFileSelect?.(null);
   }, [onFileSelect]);
+
+  const handleTreeNodeKeyDown = React.useCallback((event: React.KeyboardEvent<HTMLDivElement>, node: TreeNode) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      loadDirectory(node.path, true, { preferCache: true });
+      return;
+    }
+
+    if (event.key === "ArrowRight" && !node.expanded) {
+      event.preventDefault();
+      toggleNode(node.path, true);
+      return;
+    }
+
+    if (event.key === "ArrowLeft" && node.expanded) {
+      event.preventDefault();
+      toggleNode(node.path);
+    }
+  }, [loadDirectory, toggleNode]);
+
+  const handleParentRowKeyDown = React.useCallback((event: React.KeyboardEvent<HTMLTableRowElement>) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      handleNavigateToParent();
+    }
+  }, [handleNavigateToParent]);
+
+  const handleFileRowKeyDown = React.useCallback((event: React.KeyboardEvent<HTMLTableRowElement>, file: FileInfo) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+
+    event.preventDefault();
+    if (file.is_dir && event.key === "Enter") {
+      setSelectedFiles(new Set([file.path]));
+      onFileSelect?.(null);
+      loadDirectory(file.path, true, { preferCache: true });
+      expandTreeToPath(file.path, { preferCache: true });
+      return;
+    }
+
+    handleFileClick(file, event.ctrlKey || event.metaKey);
+  }, [expandTreeToPath, handleFileClick, loadDirectory, onFileSelect]);
 
   const loadDirectoryRef = React.useRef(loadDirectory);
   const toggleNodeRef = React.useRef(toggleNode);
@@ -1031,7 +1060,6 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
     setSelectedPath("/");
     setPathInput("/");
     setFiles([]);
-    setSelectedFile(null);
     setSelectedFiles(new Set());
     setDownloading(false);
     setDownloadStats(null);
@@ -1052,7 +1080,12 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
     return (
       <div key={node.path}>
         <div
-          className={`flex items-center gap-1 ${isCompact ? "py-1 text-sm" : "py-0.5 text-xs"} px-1 rounded cursor-pointer truncate ${
+          role="treeitem"
+          tabIndex={0}
+          aria-selected={isSelected}
+          aria-expanded={!node.loaded || (node.children && node.children.length > 0) ? Boolean(node.expanded) : undefined}
+          aria-label={t(`${node.name} 目录`, `${node.name} directory`)}
+          className={`flex items-center gap-1 ${isCompact ? "py-1 text-sm" : "py-0.5 text-xs"} px-1 rounded cursor-pointer truncate focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
             isSelected
               ? (isDark ? "bg-indigo-600/50 text-white" : "bg-indigo-100 text-indigo-700")
               : (isDark ? "hover:bg-slate-700 text-slate-300" : "hover:bg-slate-100 text-slate-600")
@@ -1064,9 +1097,13 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
           onDoubleClick={() => {
             toggleNode(node.path);
           }}
+          onKeyDown={(event) => handleTreeNodeKeyDown(event, node)}
         >
-          <span
-            className="w-4 text-center flex-shrink-0"
+          <button
+            type="button"
+            tabIndex={-1}
+            className="w-4 flex-shrink-0 text-center focus:outline-none"
+            aria-label={node.expanded ? t("收起目录", "Collapse directory") : t("展开目录", "Expand directory")}
             onClick={(e) => {
               e.stopPropagation();
               toggleNode(node.path);
@@ -1080,7 +1117,7 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
             ) : node.children && node.children.length > 0 ? (
               node.expanded ? "▼" : "▶"
             ) : node.loaded ? "" : "▶"}
-          </span>
+          </button>
           <span className="flex-shrink-0">📁</span>
           <span className="truncate">{node.name}</span>
         </div>
@@ -1251,9 +1288,9 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
       >
         {/* 拖拽遮罩 */}
         {isDragging && (
-          <div className={`absolute inset-0 z-10 flex items-center justify-center ${isDark ? "bg-slate-800/90" : "bg-slate-100/90"} border-2 border-dashed ${isDark ? "border-indigo-500" : "border-indigo-400"}`}>
+          <div className={`absolute inset-0 z-10 flex items-center justify-center ${isDark ? "bg-slate-800/90" : "bg-slate-100/90"} border-2 border-dashed ${isDark ? "border-slate-500" : "border-slate-400"}`}>
             <div className="text-center">
-              <div className={`text-2xl mb-2 ${isDark ? "text-indigo-400" : "text-indigo-500"}`}>📁</div>
+              <Upload className={`mx-auto mb-2 h-6 w-6 ${isDark ? "text-slate-300" : "text-slate-600"}`} aria-hidden="true" />
               <div className={`text-sm font-medium ${isDark ? "text-slate-200" : "text-slate-700"}`}>
                 {t("拖至此处上传到当前文件夹", "Drop here to upload into current folder")}
               </div>
@@ -1373,7 +1410,7 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
         )}
         {/* 左侧树形目录 */}
         <div className={`${isCompact ? "w-full max-h-40 border-b" : "w-1/3 border-r"} overflow-auto ${isDark ? "border-slate-700 bg-slate-800/50 dark-scrollbar" : "border-slate-200 bg-slate-50 light-scrollbar"}`}>
-          <div className="p-1">
+          <div className="p-1" role="tree" aria-label={t("目录树", "Directory tree")}>
             {tree.map(node => renderTreeNode(node))}
           </div>
         </div>
@@ -1426,9 +1463,13 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
                 {parentPath && (
                   <tr
                     key="__parent__"
-                    className={`cursor-pointer ${isDark ? "hover:bg-slate-800 text-slate-300" : "hover:bg-slate-50 text-slate-600"}`}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={t(`返回上一级: ${parentPath}`, `Go to parent: ${parentPath}`)}
+                    className={`cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400 ${isDark ? "hover:bg-slate-800 text-slate-300" : "hover:bg-slate-50 text-slate-600"}`}
                     onClick={handleParentItemClick}
                     onDoubleClick={handleNavigateToParent}
+                    onKeyDown={handleParentRowKeyDown}
                   >
                     <td className={`${rowPaddingClass} px-2 truncate max-w-[120px]`} title={t(`返回上一级: ${parentPath}`, `Go to parent: ${parentPath}`)}>
                       <span className="mr-1">📁</span>
@@ -1447,7 +1488,11 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
                 {files.map((file) => (
                   <tr
                     key={file.path}
-                    className={`cursor-pointer ${
+                    role="row"
+                    tabIndex={0}
+                    aria-selected={selectedFiles.has(file.path)}
+                    aria-label={file.is_dir ? t(`${file.name} 目录`, `${file.name} directory`) : t(`${file.name} 文件`, `${file.name} file`)}
+                    className={`cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400 ${
                       selectedFiles.has(file.path)
                         ? (isDark ? "bg-indigo-600/30" : "bg-indigo-100")
                         : (isDark ? "hover:bg-slate-800 text-slate-300" : "hover:bg-slate-50 text-slate-600")
@@ -1457,6 +1502,7 @@ export function FileBrowser({ sessionId, isDark, currentDir, onFileSelect, netwo
                       e.stopPropagation();
                       handleContextMenu(e, file);
                     }}
+                    onKeyDown={(event) => handleFileRowKeyDown(event, file)}
                   >
                     <td className={`${rowPaddingClass} px-2 truncate max-w-[120px]`} title={file.name}>
                       <span className="mr-1">{file.is_dir ? "📁" : "📄"}</span>

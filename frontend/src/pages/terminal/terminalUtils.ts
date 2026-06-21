@@ -1,4 +1,4 @@
-import type { NetworkProfile } from "../../context/AppContext";
+import type { NetworkProfile } from "../../context/AppContextCore";
 
 export type TargetNetworkProfile = "good" | "degraded" | "poor" | "unknown";
 

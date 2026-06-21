@@ -50,9 +50,7 @@ def create_app() -> FastAPI:
     ensure_system_settings(database)
 
     with database.session() as db_session:
-        password = ensure_admin_user(db_session, auth_service)
-        if password:
-            logger.warning("Initial admin password: %s", password)
+        ensure_admin_user(db_session, auth_service)
 
     # 服务器启动时，将所有 active 状态的会话标记为 disconnected
     # 因为内存中的 SSH 连接已经丢失。
@@ -140,7 +138,7 @@ def create_app() -> FastAPI:
         if index_path.exists():
             index_bytes = index_path.read_bytes()
             index_response = Response(content=index_bytes, media_type="text/html")
-            spa_exact_paths = {"/", "/sessions", "/force-password", "/settings"}
+            spa_exact_paths = {"/", "/sessions", "/force-password", "/settings", "/logs"}
             spa_prefix_paths = ("/terminal/",)
 
             def is_spa_document_request(request: Request) -> bool:

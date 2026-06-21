@@ -2,8 +2,8 @@ import React from "react";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { Input } from "../components/Input";
-import { useToast } from "../components/Toast";
-import { useApp } from "../context/AppContext";
+import { useToast } from "../components/ToastContext";
+import { useApp } from "../context/AppContextCore";
 import { updateSystemSettings } from "../lib/api";
 
 const DEFAULT_RETRY_SCHEDULE_SECONDS = [2, 4, 8, 16, 32];

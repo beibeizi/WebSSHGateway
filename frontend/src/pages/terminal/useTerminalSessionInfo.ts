@@ -1,5 +1,5 @@
 import React from "react";
-import type { NetworkProfile } from "../../context/AppContext";
+import type { NetworkProfile } from "../../context/AppContextCore";
 import { getSession, Session } from "../../lib/api";
 import {
   LATENCY_HISTORY_SIZE,

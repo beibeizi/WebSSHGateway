@@ -1,7 +1,6 @@
 import React from "react";
 import { Terminal } from "xterm";
 import { FitAddon } from "xterm-addon-fit";
-import type { NetworkProfile } from "../../context/AppContext";
 import { clearAuthStorage, getSession, getStoredToken, openTerminalSocket } from "../../lib/api";
 import {
   darkTerminalTheme,
@@ -15,7 +14,7 @@ type TerminalSocketOptions = {
   sessionId?: string;
   t: (zh: string, en: string) => string;
   push: (message: string) => void;
-  reportNetworkHint: (profile: NetworkProfile, durationMs: number) => void;
+  reportNetworkHint: (profile: "degraded" | "poor", durationMs: number) => void;
   clearNetworkHint: () => void;
   enhancedSessionRef: React.MutableRefObject<boolean>;
   setCurrentDir: (dir: string) => void;
@@ -139,7 +138,7 @@ export function useTerminalSocket({
 
         // 检测目录变化：解析提示符中的路径
         const text = output.replace(/\x1b\[[0-9;]*m/g, "");
-        const promptMatch = text.match(/:([\/][^\s$#]+)[\s$#]/);
+        const promptMatch = text.match(/:([/][^\s$#]+)[\s$#]/);
         if (promptMatch && promptMatch[1] && !promptMatch[1].startsWith("//")) {
           setCurrentDir(promptMatch[1]);
         }

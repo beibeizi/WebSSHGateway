@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import Boolean, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.db import Base, TimestampMixin
+from app.core.db import Base, TimestampMixin, UTCDateTime
 
 
 class Connection(TimestampMixin, Base):
@@ -20,3 +22,9 @@ class Connection(TimestampMixin, Base):
     remote_arch: Mapped[str | None] = mapped_column(String(64), nullable=True)
     remote_os: Mapped[str | None] = mapped_column(String(64), nullable=True)
     enhance_prompt_shown: Mapped[bool] = mapped_column(Boolean, default=False)
+    remote_probe_status: Mapped[str] = mapped_column(String(32), default="unverified")
+    remote_probe_error: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    remote_probe_checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    remote_probe_version: Mapped[int] = mapped_column(Integer, default=0)
+    enhanced_supported: Mapped[bool] = mapped_column(Boolean, default=False)
+    enhanced_probe_error: Mapped[str | None] = mapped_column(String(512), nullable=True)

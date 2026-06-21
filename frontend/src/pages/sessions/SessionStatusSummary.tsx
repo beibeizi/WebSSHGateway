@@ -1,6 +1,7 @@
 import React from "react";
 import { cn } from "../../lib/utils";
 import type { SessionStatusEntry } from "./useSessionStatusSummary";
+import { formatBytesPerSecond } from "./sessionsUtils";
 
 type SessionStatusSummaryProps = {
   entry?: SessionStatusEntry;
@@ -17,18 +18,6 @@ type MetricCardProps = {
   muted?: boolean;
 };
 
-function formatSpeed(bytesPerSec: number): string {
-  if (bytesPerSec <= 0) {
-    return "0 B/s";
-  }
-
-  const units = ["B/s", "KB/s", "MB/s", "GB/s"];
-  const base = 1024;
-  const unitIndex = Math.min(Math.floor(Math.log(bytesPerSec) / Math.log(base)), units.length - 1);
-  const value = bytesPerSec / Math.pow(base, unitIndex);
-  return `${value.toFixed(value >= 100 ? 0 : 1)} ${units[unitIndex]}`;
-}
-
 function MetricCard({ label, value, percent, isDark, accentClassName, muted = false }: MetricCardProps) {
   return (
     <div
@@ -37,7 +26,7 @@ function MetricCard({ label, value, percent, isDark, accentClassName, muted = fa
       }`}
     >
       <div className="flex items-center justify-between gap-3">
-        <span className={`text-[11px] uppercase tracking-[0.12em] ${isDark ? "text-slate-500" : "text-slate-400"}`}>
+        <span className={`text-xs font-medium ${isDark ? "text-slate-400" : "text-slate-500"}`}>
           {label}
         </span>
         <span className={cn("text-sm font-semibold", muted ? (isDark ? "text-slate-400" : "text-slate-500") : "")}>
@@ -105,15 +94,15 @@ export function SessionStatusSummary({ entry, isDark, t }: SessionStatusSummaryP
         />
         <div className={`rounded-md border px-3 py-2 md:col-span-3 ${isDark ? "border-slate-700 bg-slate-950/60" : "border-slate-200 bg-white"}`}>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <span className={`text-[11px] uppercase tracking-[0.12em] ${isDark ? "text-slate-500" : "text-slate-400"}`}>
+            <span className={`text-xs font-medium ${isDark ? "text-slate-400" : "text-slate-500"}`}>
               {t("网络", "Network")}
             </span>
             <div className="flex flex-wrap items-center gap-4 text-sm font-medium">
               <span className={isDark ? "text-emerald-300" : "text-emerald-600"}>
-                ↑ {formatSpeed(network.upload_speed)}
+                ↑ {formatBytesPerSecond(network.upload_speed)}
               </span>
               <span className={isDark ? "text-sky-300" : "text-sky-600"}>
-                ↓ {formatSpeed(network.download_speed)}
+                ↓ {formatBytesPerSecond(network.download_speed)}
               </span>
             </div>
           </div>

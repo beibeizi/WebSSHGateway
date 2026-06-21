@@ -32,9 +32,11 @@ A dedicated mobile layout provides touch-friendly interactions for terminal work
 - Browser terminal with real-time WebSocket streaming
 - Connection asset management with encrypted credentials
 - Session lifecycle management with reconnect and notes
+- Grouped session view: sessions can be grouped by connection/machine, with list/grouped view switching, persisted display preference, and machine status preview in group headers
 - Enhanced persistent session design powered by `tmux`, with keepalive and auto-retry
 - Mobile-friendly experience for phone browsers with touch-first layouts and controls
 - System monitoring for CPU, memory, network, process, and disk
+- System log viewer from the session management page, showing recent backend process logs for troubleshooting login, session, and system API issues
 - File management: browse, upload/download, rename, delete, chmod, batch upload
 - Security baseline: JWT auth, password policy, lockout policy, request-id logging
 
@@ -46,7 +48,7 @@ A dedicated mobile layout provides touch-friendly interactions for terminal work
 
 ## Quick Start
 
-> Security notice: before deployment, you must replace `SECRET_KEY` in `.env` with your own strong random value. Never keep example/default values.
+> Security notice: before deployment, you must replace both `SECRET_KEY` and `INITIAL_ADMIN_PASSWORD` in `.env` with your own strong values. Never keep example/default values.
 
 ### Local Development
 
@@ -56,10 +58,13 @@ See [docs/DEPLOYMENT.en.md](./docs/DEPLOYMENT.en.md) for step-by-step setup.
 
 Docker Hub image: `https://hub.docker.com/r/beibeizi/websshgateway`
 
-Quick start example (note: `SECRET_KEY` is an example, replace it in your own deployment; a 32‑char UUID is enough):
+Quick start example (note: both `SECRET_KEY` and `INITIAL_ADMIN_PASSWORD` below are examples and must be replaced in your own deployment):
 
 ```bash
-docker run -d -p 8080:8080 -e SECRET_KEY="67e457b4eab14012b34382b3d634f297" beibeizi/websshgateway:latest
+docker run -d -p 8080:8080 \
+  -e SECRET_KEY="67e457b4eab14012b34382b3d634f297" \
+  -e INITIAL_ADMIN_PASSWORD="ChangeMe123" \
+  beibeizi/websshgateway:latest
 ```
 
 ```bash

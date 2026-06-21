@@ -11,14 +11,14 @@ from pathlib import Path
 from typing import List, AsyncIterator
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from sqlalchemy import select
 
 from app.api.dependencies import AppState, get_current_user, get_state, get_db
-from app.core.logging import get_logger
+from app.core.logging import get_logger, get_recent_logs
 from app.models.connection import Connection
 from app.models.session import SessionRecord
 from app.services.crypto import CryptoService, EncryptedPayload
@@ -104,6 +104,22 @@ class SystemOverview(BaseModel):
 
 class FileContent(BaseModel):
     content: str
+
+
+class SystemLogEntry(BaseModel):
+    sequence: int
+    timestamp: str
+    level: str
+    logger: str
+    request_id: str
+    message: str
+    line: str
+
+
+class SystemLogList(BaseModel):
+    entries: List[SystemLogEntry]
+    limit: int
+    level: str | None = None
 
 
 class UploadResult(BaseModel):
@@ -440,6 +456,22 @@ async def collect_system_overview(session) -> SystemOverview:
         network=network,
         processes=ProcessList(processes=processes[:20]),
         disks=DiskList(disks=disks),
+    )
+
+
+@router.get("/logs", response_model=SystemLogList)
+def get_system_logs(
+    limit: int = Query(default=200, ge=1, le=1000),
+    level: str | None = Query(default=None, max_length=20),
+    _user=Depends(get_current_user),
+) -> SystemLogList:
+    normalized_level = level.upper() if level else None
+    if normalized_level and normalized_level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+        raise HTTPException(status_code=400, detail="无效的日志级别")
+    return SystemLogList(
+        entries=get_recent_logs(limit=limit, level=normalized_level),
+        limit=limit,
+        level=normalized_level,
     )
 
 

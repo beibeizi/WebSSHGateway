@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-import secrets
 from typing import Optional
 
 from sqlalchemy import inspect, select, text
@@ -15,25 +14,16 @@ from app.services.auth import AuthService
 from app.services.system_settings import ensure_system_settings_record
 
 
-def _generate_initial_password() -> str:
-    alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+"
-    while True:
-        password = "".join(secrets.choice(alphabet) for _ in range(12))
-        if (
-            any(char.islower() for char in password)
-            and any(char.isupper() for char in password)
-            and any(char.isdigit() for char in password)
-            and any(char in "!@#$%^&*()_+" for char in password)
-        ):
-            return password
-
-
-def ensure_admin_user(session: Session, auth_service: AuthService) -> Optional[str]:
+def ensure_admin_user(session: Session, auth_service: AuthService) -> bool:
     existing = session.execute(select(User).where(User.username == "admin")).scalar_one_or_none()
     if existing:
-        return None
+        return False
 
-    password = _generate_initial_password()
+    password = auth_service._config.initial_admin_password
+    if not password:
+        raise RuntimeError("INITIAL_ADMIN_PASSWORD is required when admin user does not exist")
+
+    auth_service.validate_new_password("admin", password)
     admin = User(
         username="admin",
         password_hash=auth_service.hash_password(password),
@@ -43,7 +33,7 @@ def ensure_admin_user(session: Session, auth_service: AuthService) -> Optional[s
         last_login=None,
     )
     session.add(admin)
-    return password
+    return True
 
 
 def ensure_session_note_column(database: Database) -> None:
@@ -71,6 +61,18 @@ def ensure_connection_arch_columns(database: Database) -> None:
             connection.execute(text("ALTER TABLE connections ADD COLUMN remote_os VARCHAR(64)"))
         if "enhance_prompt_shown" not in columns:
             connection.execute(text("ALTER TABLE connections ADD COLUMN enhance_prompt_shown BOOLEAN DEFAULT 0"))
+        if "remote_probe_status" not in columns:
+            connection.execute(text("ALTER TABLE connections ADD COLUMN remote_probe_status VARCHAR(32) DEFAULT 'unverified'"))
+        if "remote_probe_error" not in columns:
+            connection.execute(text("ALTER TABLE connections ADD COLUMN remote_probe_error VARCHAR(512)"))
+        if "remote_probe_checked_at" not in columns:
+            connection.execute(text("ALTER TABLE connections ADD COLUMN remote_probe_checked_at DATETIME"))
+        if "remote_probe_version" not in columns:
+            connection.execute(text("ALTER TABLE connections ADD COLUMN remote_probe_version INTEGER DEFAULT 0"))
+        if "enhanced_supported" not in columns:
+            connection.execute(text("ALTER TABLE connections ADD COLUMN enhanced_supported BOOLEAN DEFAULT 0"))
+        if "enhanced_probe_error" not in columns:
+            connection.execute(text("ALTER TABLE connections ADD COLUMN enhanced_probe_error VARCHAR(512)"))
 
 
 def ensure_session_enhanced_columns(database: Database) -> None:

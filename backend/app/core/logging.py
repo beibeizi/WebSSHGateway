@@ -1,7 +1,11 @@
 ﻿from __future__ import annotations
 
+from collections import deque
+from dataclasses import dataclass
+from datetime import datetime
 import logging
 import sys
+from threading import Lock
 import uuid
 from contextvars import ContextVar
 from typing import Any
@@ -29,6 +33,73 @@ class RequestIdFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         record.request_id = get_request_id() or "-"
         return True
+
+
+@dataclass(frozen=True)
+class RecentLogEntry:
+    sequence: int
+    timestamp: str
+    level: str
+    logger: str
+    request_id: str
+    message: str
+    line: str
+
+
+class RecentLogStore:
+    def __init__(self, max_lines: int = 1000) -> None:
+        self._entries: deque[RecentLogEntry] = deque(maxlen=max_lines)
+        self._lock = Lock()
+        self._sequence = 0
+
+    def append(self, record: logging.LogRecord, line: str) -> None:
+        request_id = getattr(record, "request_id", "-")
+        with self._lock:
+            self._sequence += 1
+            self._entries.append(
+                RecentLogEntry(
+                    sequence=self._sequence,
+                    timestamp=datetime.fromtimestamp(record.created).isoformat(timespec="seconds"),
+                    level=record.levelname,
+                    logger=record.name,
+                    request_id=str(request_id),
+                    message=record.getMessage(),
+                    line=line,
+                )
+            )
+
+    def list(self, limit: int, level: str | None = None) -> list[dict[str, Any]]:
+        normalized_limit = max(1, min(limit, self._entries.maxlen or limit))
+        normalized_level = level.upper() if level else None
+        with self._lock:
+            entries = list(self._entries)
+        if normalized_level:
+            entries = [entry for entry in entries if entry.level == normalized_level]
+        return [entry.__dict__ for entry in entries[-normalized_limit:]]
+
+    def clear(self) -> None:
+        with self._lock:
+            self._entries.clear()
+            self._sequence = 0
+
+
+class RecentLogHandler(logging.Handler):
+    def __init__(self, store: RecentLogStore) -> None:
+        super().__init__()
+        self._store = store
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            self._store.append(record, self.format(record))
+        except Exception:
+            self.handleError(record)
+
+
+_recent_log_store = RecentLogStore()
+
+
+def get_recent_logs(limit: int = 200, level: str | None = None) -> list[dict[str, Any]]:
+    return _recent_log_store.list(limit=limit, level=level)
 
 
 class StructuredFormatter(logging.Formatter):
@@ -63,6 +134,7 @@ def setup_logging(level: str = "INFO") -> None:
     """配置全局日志"""
     root_logger = logging.getLogger()
     root_logger.setLevel(level.upper())
+    _recent_log_store.clear()
 
     # 清除现有处理器
     for handler in root_logger.handlers[:]:
@@ -74,6 +146,12 @@ def setup_logging(level: str = "INFO") -> None:
     console_handler.addFilter(RequestIdFilter())
     console_handler.setFormatter(StructuredFormatter(include_request_id=True))
     root_logger.addHandler(console_handler)
+
+    recent_log_handler = RecentLogHandler(_recent_log_store)
+    recent_log_handler.setLevel(level.upper())
+    recent_log_handler.addFilter(RequestIdFilter())
+    recent_log_handler.setFormatter(StructuredFormatter(include_request_id=True))
+    root_logger.addHandler(recent_log_handler)
 
     # 减少第三方库日志噪音
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)

@@ -11,6 +11,10 @@ const CLIENT_TEXT_MAP: Record<string, { zh: string; en: string }> = {
   "用户名或密码错误": { zh: "用户名或密码错误", en: "Invalid username or password" },
   "用户不存在": { zh: "用户不存在", en: "User not found" },
   "校验码错误或已过期": { zh: "校验码错误或已过期", en: "Verification code is invalid or expired" },
+  "Web 端不支持重置密码，请联系管理员使用 CLI 重置密码": {
+    zh: "Web 端不支持重置密码，请联系管理员使用 CLI 重置密码",
+    en: "Password reset is not available on the web. Please contact an administrator to use the CLI reset command."
+  },
   "修改失败": { zh: "修改失败", en: "Update failed" },
   "发送重置校验码失败": { zh: "发送重置校验码失败", en: "Failed to send password reset verification code" },
   "重置密码失败": { zh: "重置密码失败", en: "Failed to reset password" },
@@ -26,8 +30,10 @@ const CLIENT_TEXT_MAP: Record<string, { zh: string; en: string }> = {
   "删除会话失败": { zh: "删除会话失败", en: "Failed to delete session" },
   "删除连接失败": { zh: "删除连接失败", en: "Failed to delete connection" },
   "更新连接失败": { zh: "更新连接失败", en: "Failed to update connection" },
+  "验证连接失败": { zh: "验证连接失败", en: "Failed to verify connection" },
   "获取会话失败": { zh: "获取会话失败", en: "Failed to get session" },
   "获取系统状态失败": { zh: "获取系统状态失败", en: "Failed to get system stats" },
+  "获取系统日志失败": { zh: "获取系统日志失败", en: "Failed to get system logs" },
   "获取网络状态失败": { zh: "获取网络状态失败", en: "Failed to get network stats" },
   "获取进程列表失败": { zh: "获取进程列表失败", en: "Failed to get process list" },
   "获取目录列表失败": { zh: "获取目录列表失败", en: "Failed to list directory" },
@@ -150,6 +156,13 @@ export type Connection = {
   port: number;
   username: string;
   auth_type: string;
+  remote_arch?: string | null;
+  remote_os?: string | null;
+  remote_probe_status?: "unverified" | "verifying" | "verified" | "failed" | "stale";
+  remote_probe_error?: string | null;
+  remote_probe_checked_at?: string | null;
+  enhanced_supported?: boolean;
+  enhanced_probe_error?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -211,41 +224,6 @@ async function safeError(response: Response, fallback: string, handleAuth: boole
     // ignore parse failures
   }
   return localizedFallback;
-}
-
-// 统一的请求处理函数
-async function request<T>(
-  url: string,
-  options: RequestInit = {},
-  errorMessage: string = "请求失败"
-): Promise<T> {
-  try {
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        ...getLanguageHeader(),
-        ...getAuthHeader(),
-        ...options.headers,
-      },
-    });
-    if (!response.ok) {
-      const detail = await safeError(response, errorMessage);
-      throw new BusinessError(detail);
-    }
-    const contentType = response.headers.get("content-type");
-    if (contentType?.includes("application/json")) {
-      return response.json();
-    }
-    return undefined as T;
-  } catch (error) {
-    if (error instanceof AuthError || error instanceof BusinessError) {
-      throw error;
-    }
-    if (error instanceof TypeError && error.message.includes("fetch")) {
-      throw new NetworkError();
-    }
-    throw new NetworkError(localizeClientText("请求失败，请稍后重试"));
-  }
 }
 
 function getAuthHeader(): Record<string, string> {
@@ -344,6 +322,18 @@ export async function listSessions(): Promise<Session[]> {
   });
   if (!response.ok) {
     const detail = await safeError(response, "加载会话失败");
+    throw new Error(detail);
+  }
+  return response.json();
+}
+
+export async function verifyConnection(connectionId: number): Promise<Connection> {
+  const response = await fetch(`${HTTP_BASE}/connections/${connectionId}/verify`, {
+    method: "POST",
+    headers: { ...getAuthHeader() }
+  });
+  if (!response.ok) {
+    const detail = await safeError(response, "验证连接失败");
     throw new Error(detail);
   }
   return response.json();
@@ -604,6 +594,22 @@ export type GlobalSystemSettings = {
   show_session_status_summary: boolean;
 };
 
+export type SystemLogEntry = {
+  sequence: number;
+  timestamp: string;
+  level: "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL" | string;
+  logger: string;
+  request_id: string;
+  message: string;
+  line: string;
+};
+
+export type SystemLogList = {
+  entries: SystemLogEntry[];
+  limit: number;
+  level: string | null;
+};
+
 export async function getSystemStats(sessionId: string): Promise<SystemStats> {
   const response = await fetch(`${HTTP_BASE}/system/stats/${sessionId}`, {
     headers: { ...getAuthHeader() }
@@ -643,6 +649,23 @@ export async function getSessionStatusSummary(sessionId: string): Promise<Sessio
   });
   if (!response.ok) {
     const detail = await safeError(response, "获取会话系统状态失败");
+    throw new Error(detail);
+  }
+  return response.json();
+}
+
+export async function getSystemLogs(options: { limit?: number; level?: string | null } = {}): Promise<SystemLogList> {
+  const params = new URLSearchParams();
+  params.set("limit", String(options.limit ?? 200));
+  if (options.level) {
+    params.set("level", options.level);
+  }
+
+  const response = await fetch(`${HTTP_BASE}/system/logs?${params.toString()}`, {
+    headers: { ...getAuthHeader() }
+  });
+  if (!response.ok) {
+    const detail = await safeError(response, "获取系统日志失败");
     throw new Error(detail);
   }
   return response.json();

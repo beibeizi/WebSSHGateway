@@ -45,6 +45,10 @@ _MESSAGE_CATALOG: dict[str, dict[str, str]] = {
         "zh": "校验码错误或已过期",
         "en": "Verification code is invalid or expired",
     },
+    "password_reset_cli_required": {
+        "zh": "Web 端不支持重置密码，请联系管理员使用 CLI 重置密码",
+        "en": "Password reset is not available on the web. Please contact an administrator to use the CLI reset command.",
+    },
     "connection_not_found": {
         "zh": "连接不存在",
         "en": "Connection not found",
@@ -92,6 +96,14 @@ _MESSAGE_CATALOG: dict[str, dict[str, str]] = {
     "invalid_private_key": {
         "zh": "无效的私钥格式或密码错误",
         "en": "Invalid private key format or passphrase",
+    },
+    "ssh_auth_failed": {
+        "zh": "SSH 认证失败，请检查用户名、密码或私钥",
+        "en": "SSH authentication failed. Check the username, password, or private key.",
+    },
+    "target_connect_failed": {
+        "zh": "连接目标失败",
+        "en": "Failed to connect to target host",
     },
     "host_key_missing": {
         "zh": "服务端未返回主机指纹",

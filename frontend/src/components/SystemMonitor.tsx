@@ -1,8 +1,8 @@
 ﻿import React from "react";
 import { downloadFile, getSystemOverview, readFile, writeFile, SystemStats, NetworkInfo, ProcessInfo, DiskInfo } from "../lib/api";
-import { useApp } from "../context/AppContext";
-import type { NetworkProfile } from "../context/AppContext";
-import { useToast } from "./Toast";
+import { useApp } from "../context/AppContextCore";
+import type { NetworkProfile } from "../context/AppContextCore";
+import { useToast } from "./ToastContext";
 
 function localizeText(language: string, zh: string, en: string): string {
   return language === "en-US" ? en : zh;
@@ -40,10 +40,12 @@ function isImagePath(path: string): boolean {
 type ProgressBarProps = {
   percent: number;
   isDark: boolean;
+  label: string;
   color?: "blue" | "green" | "yellow" | "red" | "cyan" | "purple";
 };
 
-function ProgressBar({ percent, isDark, color = "blue" }: ProgressBarProps) {
+function ProgressBar({ percent, isDark, label, color = "blue" }: ProgressBarProps) {
+  const clampedPercent = Math.min(100, Math.max(0, percent));
   const colorClasses = {
     blue: "bg-blue-500",
     green: "bg-emerald-500",
@@ -61,10 +63,17 @@ function ProgressBar({ percent, isDark, color = "blue" }: ProgressBarProps) {
   };
 
   return (
-    <div className={`h-2 w-full rounded-full ${isDark ? "bg-slate-700" : "bg-slate-200"}`}>
+    <div
+      className={`h-2 w-full rounded-full ${isDark ? "bg-slate-700" : "bg-slate-200"}`}
+      role="progressbar"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Number(clampedPercent.toFixed(1))}
+    >
       <div
         className={`h-2 rounded-full transition-all duration-300 ${getColor()}`}
-        style={{ width: `${Math.min(100, percent)}%` }}
+        style={{ width: `${clampedPercent}%` }}
       />
     </div>
   );
@@ -235,7 +244,7 @@ export function SystemMonitor({ sessionId, isDark, selectedFilePath, networkProf
     return () => {
       cancelled = true;
     };
-  }, [sessionId, selectedFilePath, isImageFile, push, t, revokeImageUrl, downloadFile]);
+  }, [sessionId, selectedFilePath, isImageFile, push, t, revokeImageUrl]);
 
   React.useEffect(() => {
     return () => {
@@ -342,8 +351,20 @@ export function SystemMonitor({ sessionId, isDark, selectedFilePath, networkProf
   };
 
   const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortField !== field) return <span className="opacity-30">↕</span>;
-    return <span>{sortOrder === "desc" ? "↓" : "↑"}</span>;
+    const label = sortField !== field
+      ? t("未排序", "Not sorted")
+      : sortOrder === "desc"
+      ? t("降序", "Descending")
+      : t("升序", "Ascending");
+
+    return (
+      <>
+        <span aria-hidden="true" className={sortField !== field ? "opacity-30" : ""}>
+          {sortField !== field ? "↕" : sortOrder === "desc" ? "↓" : "↑"}
+        </span>
+        <span className="sr-only">{label}</span>
+      </>
+    );
   };
 
   if (loading) {
@@ -381,7 +402,12 @@ export function SystemMonitor({ sessionId, isDark, selectedFilePath, networkProf
                   {stats.cpu.percent.toFixed(1)}%
                 </span>
               </div>
-              <ProgressBar percent={stats.cpu.percent} isDark={isDark} color="blue" />
+              <ProgressBar
+                percent={stats.cpu.percent}
+                isDark={isDark}
+                label={t(`CPU 使用率 ${stats.cpu.percent.toFixed(1)}%`, `CPU usage ${stats.cpu.percent.toFixed(1)}%`)}
+                color="blue"
+              />
             </div>
 
             {/* 内存 */}
@@ -394,7 +420,12 @@ export function SystemMonitor({ sessionId, isDark, selectedFilePath, networkProf
                   {stats.memory.percent.toFixed(1)}% ({formatBytes(stats.memory.used)} / {formatBytes(stats.memory.total)})
                 </span>
               </div>
-              <ProgressBar percent={stats.memory.percent} isDark={isDark} color="green" />
+              <ProgressBar
+                percent={stats.memory.percent}
+                isDark={isDark}
+                label={t(`内存使用率 ${stats.memory.percent.toFixed(1)}%`, `Memory usage ${stats.memory.percent.toFixed(1)}%`)}
+                color="green"
+              />
             </div>
 
             {/* 交换区 */}
@@ -411,7 +442,12 @@ export function SystemMonitor({ sessionId, isDark, selectedFilePath, networkProf
                 </span>
               </div>
               {stats.swap.total > 0 && (
-                <ProgressBar percent={stats.swap.percent} isDark={isDark} color="yellow" />
+                <ProgressBar
+                  percent={stats.swap.percent}
+                  isDark={isDark}
+                  label={t(`Swap 使用率 ${stats.swap.percent.toFixed(1)}%`, `Swap usage ${stats.swap.percent.toFixed(1)}%`)}
+                  color="yellow"
+                />
               )}
             </div>
 
@@ -444,18 +480,24 @@ export function SystemMonitor({ sessionId, isDark, selectedFilePath, networkProf
             {/* 表头 */}
             <div className={`flex text-xs mb-2 ${isDark ? "text-slate-400" : "text-slate-500"}`}>
               <div className="flex-1">{t("进程名", "Process")}</div>
-              <div
-                className="w-16 text-right cursor-pointer hover:text-indigo-400 select-none"
+              <button
+                type="button"
+                className="w-16 bg-transparent p-0 text-right hover:text-indigo-400 focus:outline-none focus-visible:rounded focus-visible:ring-2 focus-visible:ring-indigo-400"
                 onClick={() => handleSort("cpu")}
+                aria-label={t("按 CPU 使用率排序", "Sort by CPU usage")}
+                aria-pressed={sortField === "cpu"}
               >
                 CPU <SortIcon field="cpu" />
-              </div>
-              <div
-                className="w-20 text-right cursor-pointer hover:text-indigo-400 select-none"
+              </button>
+              <button
+                type="button"
+                className="w-20 bg-transparent p-0 text-right hover:text-indigo-400 focus:outline-none focus-visible:rounded focus-visible:ring-2 focus-visible:ring-indigo-400"
                 onClick={() => handleSort("memory")}
+                aria-label={t("按内存使用量排序", "Sort by memory usage")}
+                aria-pressed={sortField === "memory"}
               >
                 {t("内存", "Memory")} <SortIcon field="memory" />
-              </div>
+              </button>
             </div>
 
             {/* 进程表 */}
@@ -502,7 +544,12 @@ export function SystemMonitor({ sessionId, isDark, selectedFilePath, networkProf
                     {disk.percent.toFixed(1)}% ({formatBytes(disk.used)} / {formatBytes(disk.total)})
                   </span>
                 </div>
-                <ProgressBar percent={disk.percent} isDark={isDark} color="cyan" />
+                <ProgressBar
+                  percent={disk.percent}
+                  isDark={isDark}
+                  label={t(`磁盘 ${disk.mount} 使用率 ${disk.percent.toFixed(1)}%`, `Disk ${disk.mount} usage ${disk.percent.toFixed(1)}%`)}
+                  color="cyan"
+                />
               </div>
             ))}
           </div>

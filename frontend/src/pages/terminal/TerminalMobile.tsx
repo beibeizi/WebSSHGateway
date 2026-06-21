@@ -1,8 +1,13 @@
 import React from "react";
 import { Button } from "../../components/Button";
-import { FileBrowser } from "../../components/FileBrowser";
-import { SystemMonitor } from "../../components/SystemMonitor";
 import type { TerminalSessionState } from "./useTerminalSession";
+
+const FileBrowser = React.lazy(() =>
+  import("../../components/FileBrowser").then((module) => ({ default: module.FileBrowser }))
+);
+const SystemMonitor = React.lazy(() =>
+  import("../../components/SystemMonitor").then((module) => ({ default: module.SystemMonitor }))
+);
 
 type TerminalMobileProps = {
   state: TerminalSessionState;
@@ -10,6 +15,14 @@ type TerminalMobileProps = {
 };
 
 type MobileTab = "terminal" | "files" | "system";
+
+function MobilePanelFallback({ isDark }: { isDark: boolean }) {
+  return (
+    <div className={`flex h-full min-h-[180px] items-center justify-center rounded-lg border text-sm ${isDark ? "border-slate-800 bg-slate-900/40 text-slate-400" : "border-slate-200 bg-white text-slate-500"}`}>
+      加载中... / Loading...
+    </div>
+  );
+}
 
 export function TerminalMobile({ state, onBack }: TerminalMobileProps) {
   const [activeTab, setActiveTab] = React.useState<MobileTab>("terminal");
@@ -143,7 +156,7 @@ export function TerminalMobile({ state, onBack }: TerminalMobileProps) {
               <button
                 type="button"
                 onClick={() => scrollTerminal("up", "remote")}
-                className={`h-10 w-10 rounded-full border text-base ${
+                className={`h-11 w-11 rounded-full border text-base ${
                   state.isDark
                     ? "border-slate-700 bg-slate-900/90 text-slate-200"
                     : "border-slate-200 bg-white text-slate-700"
@@ -155,7 +168,7 @@ export function TerminalMobile({ state, onBack }: TerminalMobileProps) {
               <button
                 type="button"
                 onClick={() => scrollTerminal("down", "remote")}
-                className={`h-10 w-10 rounded-full border text-base ${
+                className={`h-11 w-11 rounded-full border text-base ${
                   state.isDark
                     ? "border-slate-700 bg-slate-900/90 text-slate-200"
                     : "border-slate-200 bg-white text-slate-700"
@@ -171,14 +184,16 @@ export function TerminalMobile({ state, onBack }: TerminalMobileProps) {
         <div className={`${activeTab === "files" ? "flex" : "hidden"} h-full flex-col`}>
           <div className="flex-1 p-3 min-h-0">
             {state.sessionId ? (
-              <FileBrowser
-                sessionId={state.sessionId}
-                isDark={state.isDark}
-                currentDir={state.currentDir}
-                onFileSelect={state.setSelectedFilePath}
-                networkProfile={state.sessionNetworkProfile}
-                compact
-              />
+              <React.Suspense fallback={<MobilePanelFallback isDark={state.isDark} />}>
+                <FileBrowser
+                  sessionId={state.sessionId}
+                  isDark={state.isDark}
+                  currentDir={state.currentDir}
+                  onFileSelect={state.setSelectedFilePath}
+                  networkProfile={state.sessionNetworkProfile}
+                  compact
+                />
+              </React.Suspense>
             ) : null}
           </div>
         </div>
@@ -186,13 +201,15 @@ export function TerminalMobile({ state, onBack }: TerminalMobileProps) {
         <div className={`${activeTab === "system" ? "flex" : "hidden"} h-full flex-col`}>
           <div className="flex-1 p-3 min-h-0 overflow-y-auto">
             {state.sessionId ? (
-              <SystemMonitor
-                sessionId={state.sessionId}
-                isDark={state.isDark}
-                selectedFilePath={state.selectedFilePath || undefined}
-                networkProfile={state.sessionNetworkProfile}
-                compact
-              />
+              <React.Suspense fallback={<MobilePanelFallback isDark={state.isDark} />}>
+                <SystemMonitor
+                  sessionId={state.sessionId}
+                  isDark={state.isDark}
+                  selectedFilePath={state.selectedFilePath || undefined}
+                  networkProfile={state.sessionNetworkProfile}
+                  compact
+                />
+              </React.Suspense>
             ) : null}
           </div>
         </div>
