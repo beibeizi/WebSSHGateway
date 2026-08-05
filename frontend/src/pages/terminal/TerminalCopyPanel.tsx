@@ -18,6 +18,10 @@ type SelectionRange = {
 
 type CopyTarget = "selection" | "all";
 
+const useBrowserLayoutEffect = typeof window === "undefined"
+  ? React.useEffect
+  : React.useLayoutEffect;
+
 export function TerminalCopyPanel({
   snapshot,
   isDark,
@@ -28,6 +32,20 @@ export function TerminalCopyPanel({
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const [selection, setSelection] = React.useState<SelectionRange>({ start: 0, end: 0 });
   const [copying, setCopying] = React.useState<CopyTarget | null>(null);
+
+  useBrowserLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+    const positionSnapshot = () => {
+      const maxScrollTop = Math.max(0, textarea.scrollHeight - textarea.clientHeight);
+      textarea.scrollTop = snapshot.initialScrollRatio * maxScrollTop;
+    };
+    positionSnapshot();
+    const frame = window.requestAnimationFrame(positionSnapshot);
+    return () => window.cancelAnimationFrame(frame);
+  }, [snapshot.initialScrollRatio, snapshot.text]);
 
   const syncSelection = React.useCallback(() => {
     const textarea = textareaRef.current;

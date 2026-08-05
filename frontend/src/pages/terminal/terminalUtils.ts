@@ -9,6 +9,8 @@ export type TerminalBufferLineSource = {
 
 export type TerminalBufferSource = {
   readonly length: number;
+  readonly baseY: number;
+  readonly viewportY: number;
   getLine: (index: number) => TerminalBufferLineSource | undefined;
 };
 
@@ -16,6 +18,7 @@ export type TerminalBufferSnapshot = {
   text: string;
   loadedLines: number;
   truncated: boolean;
+  initialScrollRatio: number;
 };
 
 type TerminalBufferSnapshotLimits = {
@@ -133,13 +136,33 @@ function safeUtf16Suffix(value: string, maxChars: number): string {
   return value.slice(start);
 }
 
+function calculateInitialScrollRatio(
+  buffer: TerminalBufferSource,
+  firstIncludedIndex: number,
+  bufferLength: number
+): number {
+  if (firstIncludedIndex >= bufferLength) {
+    return 0;
+  }
+  const rawBaseY = Number.isFinite(buffer.baseY) ? Math.floor(buffer.baseY) : 0;
+  const bottomViewportY = Math.min(Math.max(rawBaseY, 0), bufferLength - 1);
+  if (bottomViewportY <= firstIncludedIndex) {
+    return 0;
+  }
+  const rawViewportY = Number.isFinite(buffer.viewportY)
+    ? Math.floor(buffer.viewportY)
+    : bottomViewportY;
+  const viewportY = Math.min(Math.max(rawViewportY, firstIncludedIndex), bottomViewportY);
+  return (viewportY - firstIncludedIndex) / (bottomViewportY - firstIncludedIndex);
+}
+
 export function createTerminalBufferSnapshot(
   buffer: TerminalBufferSource,
   limits: TerminalBufferSnapshotLimits = {}
 ): TerminalBufferSnapshot {
   const bufferLength = Math.max(0, Math.floor(buffer.length));
   if (bufferLength === 0) {
-    return { text: "", loadedLines: 0, truncated: false };
+    return { text: "", loadedLines: 0, truncated: false, initialScrollRatio: 0 };
   }
 
   const maxLines = positiveInteger(limits.maxLines, TERMINAL_COPY_MAX_LINES);
@@ -185,6 +208,7 @@ export function createTerminalBufferSnapshot(
     text,
     loadedLines: orderedLines.length,
     truncated: stoppedByCharacterLimit || firstIncludedIndex > 0,
+    initialScrollRatio: calculateInitialScrollRatio(buffer, firstIncludedIndex, bufferLength),
   };
 }
 

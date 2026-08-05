@@ -9,7 +9,7 @@ describe("TerminalCopyPanel", () => {
   it("以只读原生文本区展示终端快照和复制操作", () => {
     const markup = renderToStaticMarkup(
       <TerminalCopyPanel
-        snapshot={{ text: "第一行\nsecond line", loadedLines: 2, truncated: false }}
+        snapshot={{ text: "第一行\nsecond line", loadedLines: 2, truncated: false, initialScrollRatio: 0 }}
         isDark
         t={t}
         onCopy={async () => true}
@@ -28,7 +28,7 @@ describe("TerminalCopyPanel", () => {
   it("在快照被限制时明确展示最近输出范围", () => {
     const markup = renderToStaticMarkup(
       <TerminalCopyPanel
-        snapshot={{ text: "latest", loadedLines: 10000, truncated: true }}
+        snapshot={{ text: "latest", loadedLines: 10000, truncated: true, initialScrollRatio: 0 }}
         isDark={false}
         t={t}
         onCopy={async () => true}
@@ -43,7 +43,7 @@ describe("TerminalCopyPanel", () => {
   it("空快照禁用两个复制按钮", () => {
     const markup = renderToStaticMarkup(
       <TerminalCopyPanel
-        snapshot={{ text: "", loadedLines: 0, truncated: false }}
+        snapshot={{ text: "", loadedLines: 0, truncated: false, initialScrollRatio: 0 }}
         isDark
         t={t}
         onCopy={async () => true}

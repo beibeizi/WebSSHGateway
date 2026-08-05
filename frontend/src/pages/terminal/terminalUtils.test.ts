@@ -13,9 +13,14 @@ function line(text: string, isWrapped = false): FakeLine {
   };
 }
 
-function buffer(lines: Array<FakeLine | undefined>) {
+function buffer(
+  lines: Array<FakeLine | undefined>,
+  position: { baseY?: number; viewportY?: number } = {}
+) {
   return {
     length: lines.length,
+    baseY: position.baseY ?? 0,
+    viewportY: position.viewportY ?? 0,
     getLine: (index: number) => lines[index],
   };
 }
@@ -34,6 +39,7 @@ describe("createTerminalBufferSnapshot", () => {
       text: "deploy 成功\nnext",
       loadedLines: 3,
       truncated: false,
+      initialScrollRatio: 0,
     });
   });
 
@@ -50,6 +56,7 @@ describe("createTerminalBufferSnapshot", () => {
       text: "command output",
       loadedLines: 3,
       truncated: false,
+      initialScrollRatio: 0,
     });
   });
 
@@ -67,6 +74,7 @@ describe("createTerminalBufferSnapshot", () => {
       text: "中文-newest",
       loadedLines: 1,
       truncated: true,
+      initialScrollRatio: 0,
     });
   });
 
@@ -85,6 +93,7 @@ describe("createTerminalBufferSnapshot", () => {
       text: "prefix continued tail\nnewest",
       loadedLines: 4,
       truncated: false,
+      initialScrollRatio: 0,
     });
   });
 
@@ -101,6 +110,7 @@ describe("createTerminalBufferSnapshot", () => {
       text: "new",
       loadedLines: 1,
       truncated: true,
+      initialScrollRatio: 0,
     });
   });
 
@@ -114,6 +124,7 @@ describe("createTerminalBufferSnapshot", () => {
       text: "B",
       loadedLines: 1,
       truncated: true,
+      initialScrollRatio: 0,
     });
   });
 
@@ -130,6 +141,7 @@ describe("createTerminalBufferSnapshot", () => {
       text: "first\nlast",
       loadedLines: 2,
       truncated: false,
+      initialScrollRatio: 0,
     });
   });
 
@@ -138,6 +150,50 @@ describe("createTerminalBufferSnapshot", () => {
       text: "",
       loadedLines: 0,
       truncated: false,
+      initialScrollRatio: 0,
     });
+  });
+
+  it("终端位于底部时将初始滚动比例映射到末尾", () => {
+    const result = createTerminalBufferSnapshot(
+      buffer(Array.from({ length: 10 }, (_, index) => line(String(index))), {
+        baseY: 6,
+        viewportY: 6,
+      })
+    );
+
+    expect(result.initialScrollRatio).toBe(1);
+  });
+
+  it("终端位于历史中间时保留近似 viewport 比例", () => {
+    const result = createTerminalBufferSnapshot(
+      buffer(Array.from({ length: 10 }, (_, index) => line(String(index))), {
+        baseY: 8,
+        viewportY: 4,
+      })
+    );
+
+    expect(result.initialScrollRatio).toBe(0.5);
+  });
+
+  it("viewport 位于已截断快照之前时定位到快照顶部", () => {
+    const result = createTerminalBufferSnapshot(
+      buffer(Array.from({ length: 10 }, (_, index) => line(String(index))), {
+        baseY: 8,
+        viewportY: 4,
+      }),
+      { maxLines: 4 }
+    );
+
+    expect(result.initialScrollRatio).toBe(0);
+  });
+
+  it("没有 scrollback 时使用顶部且不产生 NaN", () => {
+    const result = createTerminalBufferSnapshot(
+      buffer([line("screen")], { baseY: 0, viewportY: 0 })
+    );
+
+    expect(result.initialScrollRatio).toBe(0);
+    expect(Number.isFinite(result.initialScrollRatio)).toBe(true);
   });
 });
