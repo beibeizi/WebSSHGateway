@@ -13,6 +13,7 @@ from app.models.connection import Connection
 from app.models.session import SessionRecord
 from app.services.auth import AuthService
 from app.services.crypto import CryptoService, EncryptedPayload
+from app.services.enhanced_session import is_retryable_enhanced_error
 from app.services.session_updates import SessionBroadcaster
 from app.services.ssh_manager import SessionManager
 from app.services.system_settings import load_runtime_system_settings, resolve_retry_delay_seconds
@@ -143,7 +144,15 @@ def build_state() -> tuple[
                                 record.retry_cycle_count += 1
                                 record.auto_retry_count += 1
                                 record.last_activity = utc_now()
-                                logger.warning("enhanced retry failed session_id=%s attempt=%s error=%s", record.id, attempt, exc)
+                                if not is_retryable_enhanced_error(exc):
+                                    record.allow_auto_retry = False
+                                logger.warning(
+                                    "enhanced retry failed session_id=%s attempt=%s error_type=%s error=%s",
+                                    record.id,
+                                    attempt,
+                                    type(exc).__name__,
+                                    exc,
+                                )
                                 await session_broadcaster.broadcast(record.user_id, _serialize_session_status(record))
                 except Exception as exc:
                     logger.warning("enhanced retry worker error: %s", exc)

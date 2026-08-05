@@ -1,12 +1,29 @@
 import React from "react";
 import { useToast } from "../../components/ToastContext";
 import { useApp } from "../../context/AppContextCore";
+import { copyTextToClipboard } from "./clipboardUtils";
 import { darkTerminalTheme, lightTerminalTheme } from "./terminalUtils";
 import { useTerminalSocket } from "./useTerminalSocket";
 import { useTerminalSessionInfo } from "./useTerminalSessionInfo";
 
 function localizeText(language: string, zh: string, en: string): string {
   return language === "en-US" ? en : zh;
+}
+
+function fallbackCopyText(text: string): boolean {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  try {
+    textarea.select();
+    return document.execCommand("copy");
+  } finally {
+    textarea.remove();
+  }
 }
 
 export function useTerminalSession(sessionId?: string) {
@@ -73,45 +90,29 @@ export function useTerminalSession(sessionId?: string) {
     push(t("已全选", "Selected all"));
   }, [push, t, socketState.terminalInstance]);
 
+  const copyText = React.useCallback(async (text: string): Promise<boolean> => {
+    if (!text) {
+      push(t("没有可复制内容", "No selection to copy"));
+      return false;
+    }
+
+    const writeText = navigator.clipboard?.writeText
+      ? navigator.clipboard.writeText.bind(navigator.clipboard)
+      : undefined;
+    const copied = await copyTextToClipboard(text, writeText, fallbackCopyText);
+    if (copied) {
+      push(t("已复制选中内容", "Copied selection"));
+      return true;
+    }
+    push(t("复制失败，请使用系统复制菜单", "Copy failed, use the system copy menu"));
+    return false;
+  }, [push, t]);
+
   const handleCopySelection = React.useCallback(async () => {
     const termSelection = socketState.terminalInstance.current?.getSelection() ?? "";
     const domSelection = window.getSelection()?.toString() ?? "";
-    const selection = termSelection || domSelection;
-    if (!selection) {
-      push(t("没有可复制内容", "No selection to copy"));
-      return;
-    }
-
-    const fallbackCopy = () => {
-      const textarea = document.createElement("textarea");
-      textarea.value = selection;
-      textarea.setAttribute("readonly", "");
-      textarea.style.position = "fixed";
-      textarea.style.left = "-9999px";
-      textarea.style.opacity = "0";
-      document.body.appendChild(textarea);
-      textarea.select();
-      const copied = document.execCommand("copy");
-      document.body.removeChild(textarea);
-      return copied;
-    };
-
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(selection);
-        push(t("已复制选中内容", "Copied selection"));
-        return;
-      }
-    } catch {
-      // 使用降级方案处理复制失败。
-    }
-
-    if (fallbackCopy()) {
-      push(t("已复制选中内容", "Copied selection"));
-      return;
-    }
-    push(t("复制失败，请使用右键菜单", "Copy failed, use context menu"));
-  }, [push, t, socketState.terminalInstance]);
+    await copyText(termSelection || domSelection);
+  }, [copyText, socketState.terminalInstance]);
 
   const connectionLabel =
     socketState.connectionState === "open"
@@ -172,6 +173,7 @@ export function useTerminalSession(sessionId?: string) {
     handleClear,
     handleSelectAll,
     handleCopySelection,
+    copyText,
   };
 }
 

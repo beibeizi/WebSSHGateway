@@ -105,6 +105,50 @@ _MESSAGE_CATALOG: dict[str, dict[str, str]] = {
         "zh": "连接目标失败",
         "en": "Failed to connect to target host",
     },
+    "ssh_remote_closed": {
+        "zh": "目标 SSH 服务在握手或通信期间关闭了连接，请检查精简 SSH 服务的连接限制和设备资源",
+        "en": "The target SSH service closed the connection during handshake or communication. Check connection limits and device resources on the lightweight SSH server.",
+    },
+    "enhanced_temp_unwritable": {
+        "zh": "目标机器临时目录不可写，无法启用增强持久化连接",
+        "en": "The target temporary directory is not writable. Enhanced persistence cannot be enabled.",
+    },
+    "enhanced_temp_write_verify_failed": {
+        "zh": "目标机器临时目录写入校验失败，无法启用增强持久化连接",
+        "en": "Temporary directory write verification failed on the target host. Enhanced persistence cannot be enabled.",
+    },
+    "enhanced_temp_noexec": {
+        "zh": "目标机器临时目录禁止执行文件，无法启用增强持久化连接",
+        "en": "The target temporary directory does not allow execution. Enhanced persistence cannot be enabled.",
+    },
+    "enhanced_upload_failed": {
+        "zh": "无法向目标机器上传增强持久化组件，请检查临时目录权限和可用空间",
+        "en": "Failed to upload the enhanced persistence component. Check temporary directory permissions and free space.",
+    },
+    "enhanced_upload_verify_failed": {
+        "zh": "增强持久化组件上传校验失败，请检查目标机器可用空间",
+        "en": "Enhanced persistence component upload verification failed. Check free space on the target host.",
+    },
+    "enhanced_install_failed": {
+        "zh": "无法安装增强持久化组件，请检查目标临时目录权限",
+        "en": "Failed to install the enhanced persistence component. Check target temporary directory permissions.",
+    },
+    "enhanced_binary_run_failed": {
+        "zh": "增强持久化组件无法在目标机器上运行，请检查系统架构和执行权限",
+        "en": "The enhanced persistence component cannot run on the target host. Check architecture and execute permissions.",
+    },
+    "enhanced_tmux_create_failed": {
+        "zh": "无法在目标机器上创建增强持久化会话",
+        "en": "Failed to create an enhanced persistent session on the target host.",
+    },
+    "enhanced_tmux_unavailable": {
+        "zh": "增强持久化会话创建后不可用，请检查目标机器资源",
+        "en": "The enhanced persistent session is unavailable after creation. Check target host resources.",
+    },
+    "enhanced_params_incomplete": {
+        "zh": "增强持久化会话参数不完整",
+        "en": "Enhanced persistent session parameters are incomplete.",
+    },
     "host_key_missing": {
         "zh": "服务端未返回主机指纹",
         "en": "Host key not provided by server",

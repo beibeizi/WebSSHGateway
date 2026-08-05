@@ -4,13 +4,13 @@ import json
 import logging
 from typing import Any
 
-import asyncssh
 from sqlalchemy import select
 
 from app.core.config import AppConfig
 from app.core.db import Database, utc_now
 from app.models.connection import Connection
 from app.services.crypto import CryptoService, EncryptedPayload
+from app.services.ssh_errors import ssh_error_detail
 from app.services.ssh_manager import SessionManager
 
 logger = logging.getLogger(__name__)
@@ -23,14 +23,7 @@ PROBE_STALE = "stale"
 
 
 def connection_probe_error_detail(error: Exception) -> str:
-    if isinstance(error, asyncssh.PermissionDenied):
-        return "SSH 认证失败，请检查用户名、密码或私钥"
-    if isinstance(error, asyncssh.HostKeyNotVerifiable):
-        return "目标主机密钥无法验证"
-    if isinstance(error, TimeoutError):
-        return "网络连接超时"
-    detail = str(error).strip()
-    return detail or "连接目标失败"
+    return ssh_error_detail(error)
 
 
 def reset_connection_probe(connection: Connection) -> int:
@@ -83,11 +76,31 @@ def has_verified_platform_cache(connection: Connection) -> bool:
     )
 
 
+def has_verified_enhanced_capability_cache(connection: Connection) -> bool:
+    return has_verified_platform_cache(connection) and (
+        bool(connection.enhanced_supported) or connection.enhanced_probe_error is not None
+    )
+
+
 def decrypt_connection_auth(connection: Connection, config: AppConfig) -> dict[str, Any]:
     auth_data = json.loads(connection.auth_data)
     crypto = CryptoService(config.secret_keys)
     decrypted = crypto.decrypt(EncryptedPayload(nonce=auth_data["nonce"], ciphertext=auth_data["ciphertext"]))
     return json.loads(decrypted)
+
+
+async def detect_connection_capabilities(
+    session_manager: SessionManager,
+    connection: Connection,
+    auth_payload: dict[str, Any],
+) -> tuple[str, str, bool, str | None]:
+    detect_capabilities = getattr(session_manager, "detect_remote_capabilities", None)
+    if callable(detect_capabilities):
+        return await detect_capabilities(connection, auth_payload)
+
+    remote_arch, remote_os = await session_manager.detect_remote_platform(connection, auth_payload)
+    enhanced_supported = session_manager.resolve_keepalive_binary(remote_arch, remote_os) is not None
+    return remote_arch, remote_os, enhanced_supported, None
 
 
 async def run_connection_probe(
@@ -109,8 +122,11 @@ async def run_connection_probe(
             auth_payload = decrypt_connection_auth(connection, config)
             session.expunge(connection)
 
-        remote_arch, remote_os = await session_manager.detect_remote_platform(connection, auth_payload)
-        enhanced_supported = session_manager.resolve_keepalive_binary(remote_arch, remote_os) is not None
+        remote_arch, remote_os, enhanced_supported, enhanced_probe_error = await detect_connection_capabilities(
+            session_manager,
+            connection,
+            auth_payload,
+        )
     except Exception as error:
         with database.session() as session:
             current = session.execute(
@@ -119,7 +135,13 @@ async def run_connection_probe(
             if not current or current.remote_probe_version != probe_version:
                 return
             mark_connection_probe_failed(current, error)
-        logger.info("connection probe failed connection_id=%s user_id=%s error=%s", connection_id, user_id, error)
+        logger.info(
+            "connection probe failed connection_id=%s user_id=%s error_type=%s error=%s",
+            connection_id,
+            user_id,
+            type(error).__name__,
+            error,
+        )
         return
 
     with database.session() as session:
@@ -128,4 +150,10 @@ async def run_connection_probe(
         ).scalar_one_or_none()
         if not current or current.remote_probe_version != probe_version:
             return
-        mark_connection_probe_verified(current, remote_arch, remote_os, enhanced_supported)
+        mark_connection_probe_verified(
+            current,
+            remote_arch,
+            remote_os,
+            enhanced_supported,
+            enhanced_probe_error,
+        )

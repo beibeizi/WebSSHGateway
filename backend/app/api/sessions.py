@@ -6,7 +6,6 @@ import logging
 import time
 import uuid
 
-import asyncssh
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel
 from sqlalchemy import select, func
@@ -26,11 +25,15 @@ from app.schemas.api import (
     TerminalMessage,
 )
 from app.services.crypto import CryptoService, EncryptedPayload
+from app.services.enhanced_session import is_retryable_enhanced_error
 from app.services.connection_probe import (
+    detect_connection_capabilities,
+    has_verified_enhanced_capability_cache,
     has_verified_platform_cache,
     mark_connection_probe_verified,
 )
 from app.services.session_updates import SessionBroadcaster
+from app.services.ssh_errors import SSH_CONNECTION_EXCEPTIONS, ssh_error_detail
 from app.services.ssh_manager import ManagedSession, SessionManager
 from app.services.system_settings import load_runtime_system_settings, resolve_retry_delay_seconds
 from app.services.types import PtyInfo
@@ -68,7 +71,7 @@ _DA_RESPONSE_SEQUENCES: tuple[str, ...] = tuple(
 )
 _DA_MAX_SEQUENCE_LEN = max(len(sequence) for sequence in _DA_RESPONSE_SEQUENCES)
 _INITIAL_DA_SUPPRESS_SECONDS = 12.0
-_TARGET_CONNECTION_EXCEPTIONS = (ValueError, OSError, TimeoutError, asyncssh.Error)
+_TARGET_CONNECTION_EXCEPTIONS = SSH_CONNECTION_EXCEPTIONS
 
 
 def _strip_da_response_sequences(data: str) -> str:
@@ -113,15 +116,17 @@ class SessionPrepareResponse(BaseModel):
 
 
 def _target_connection_error_detail(error: Exception) -> str:
-    if isinstance(error, asyncssh.PermissionDenied):
-        return "SSH 认证失败，请检查用户名、密码或私钥"
-    detail = str(error).strip()
-    return detail or "连接目标失败"
+    return ssh_error_detail(error)
 
 
 def _raise_target_connection_error(error: Exception, operation: str) -> None:
     detail = _target_connection_error_detail(error)
-    logger.warning("%s failed: %s", operation, detail)
+    logger.warning(
+        "%s failed error_type=%s detail=%s",
+        operation,
+        type(error).__name__,
+        detail,
+    )
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from error
 
 
@@ -240,18 +245,34 @@ async def prepare_session(
     auth_payload = json.loads(decrypted)
 
     session_manager: SessionManager = state.session_manager
-    if has_verified_platform_cache(conn):
+    has_legacy_platform_adapter = has_verified_platform_cache(conn) and not callable(
+        getattr(session_manager, "detect_remote_capabilities", None)
+    )
+    if has_verified_enhanced_capability_cache(conn) or has_legacy_platform_adapter:
         remote_arch = conn.remote_arch or ""
         remote_os = conn.remote_os or ""
+        supports_enhanced = (
+            bool(conn.enhanced_supported)
+            if not has_legacy_platform_adapter
+            else session_manager.resolve_keepalive_binary(remote_arch, remote_os) is not None
+        )
     else:
         try:
-            remote_arch, remote_os = await session_manager.detect_remote_platform(conn, auth_payload)
+            remote_arch, remote_os, supports_enhanced, enhanced_probe_error = await detect_connection_capabilities(
+                session_manager,
+                conn,
+                auth_payload,
+            )
         except _TARGET_CONNECTION_EXCEPTIONS as error:
             _raise_target_connection_error(error, "prepare_session target detection")
-        enhanced_supported = session_manager.resolve_keepalive_binary(remote_arch, remote_os) is not None
-        mark_connection_probe_verified(conn, remote_arch, remote_os, enhanced_supported)
+        mark_connection_probe_verified(
+            conn,
+            remote_arch,
+            remote_os,
+            supports_enhanced,
+            enhanced_probe_error,
+        )
 
-    supports_enhanced = session_manager.resolve_keepalive_binary(remote_arch, remote_os) is not None
     has_existing_enhanced = db.execute(
         select(SessionRecord.id).where(
             SessionRecord.connection_id == conn.id,
@@ -319,27 +340,52 @@ async def create_session(
         conn.remote_os,
     )
 
-    if has_verified_platform_cache(conn):
+    has_legacy_platform_adapter = has_verified_platform_cache(conn) and not callable(
+        getattr(session_manager, "detect_remote_capabilities", None)
+    )
+    if has_verified_enhanced_capability_cache(conn) or has_legacy_platform_adapter:
         remote_arch = (conn.remote_arch or "").strip()
         remote_os = (conn.remote_os or "").strip()
+        if has_legacy_platform_adapter:
+            enhanced_supported = session_manager.resolve_keepalive_binary(remote_arch, remote_os) is not None
+            enhanced_probe_error = None
+        else:
+            enhanced_supported = bool(conn.enhanced_supported)
+            enhanced_probe_error = conn.enhanced_probe_error
     else:
         try:
-            detected_arch, detected_os = await session_manager.detect_remote_platform(conn, auth_payload)
+            detected_arch, detected_os, enhanced_supported, enhanced_probe_error = await detect_connection_capabilities(
+                session_manager,
+                conn,
+                auth_payload,
+            )
         except _TARGET_CONNECTION_EXCEPTIONS as error:
             _raise_target_connection_error(error, "create_session target detection")
-        enhanced_supported = session_manager.resolve_keepalive_binary(detected_arch, detected_os) is not None
-        mark_connection_probe_verified(conn, detected_arch, detected_os, enhanced_supported)
+        mark_connection_probe_verified(
+            conn,
+            detected_arch,
+            detected_os,
+            enhanced_supported,
+            enhanced_probe_error,
+        )
         remote_arch = detected_arch
         remote_os = detected_os
 
-    binary_match = session_manager.resolve_keepalive_binary(remote_arch, remote_os) if payload.enable_enhanced_persistence else None
+    binary_match = (
+        session_manager.resolve_keepalive_binary(remote_arch, remote_os)
+        if payload.enable_enhanced_persistence and enhanced_supported
+        else None
+    )
     enable_enhanced = False
     enhanced_fingerprint: str | None = None
     tmux_binary_path: str | None = None
 
     if payload.enable_enhanced_persistence:
-        if not binary_match:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前目标机器不支持增强持久化连接")
+        if not enhanced_supported or not binary_match:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=enhanced_probe_error or "当前目标机器不支持增强持久化连接",
+            )
         enhanced_fingerprint = f"kp_{conn.id}_{user.id}_{uuid.uuid4().hex}"
         tmux_binary_path = binary_match[1]
         enable_enhanced = True
@@ -447,10 +493,21 @@ async def retry_enhanced_session(
             return response
         except Exception as exc:
             last_error = exc
+            if not is_retryable_enhanced_error(exc):
+                record.allow_auto_retry = False
+                record.retry_cycle_count = attempt
+                db.commit()
+                break
             if attempt < settings.enhanced_retry_max_attempts:
                 await asyncio.sleep(resolve_retry_delay_seconds(attempt - 1, settings.enhanced_retry_schedule_seconds))
 
-    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(last_error) if last_error else "重试失败")
+    detail = _target_connection_error_detail(last_error) if last_error else "重试失败"
+    error_status = (
+        status.HTTP_500_INTERNAL_SERVER_ERROR
+        if last_error is None or is_retryable_enhanced_error(last_error)
+        else status.HTTP_400_BAD_REQUEST
+    )
+    raise HTTPException(status_code=error_status, detail=detail)
 
 
 @router.post("/{session_id}/disconnect")
