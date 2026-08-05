@@ -1,5 +1,7 @@
 import React from "react";
 import { Button } from "../../components/Button";
+import { TerminalCopyPanel } from "./TerminalCopyPanel";
+import { createTerminalBufferSnapshot, type TerminalBufferSnapshot } from "./terminalUtils";
 import type { TerminalSessionState } from "./useTerminalSession";
 
 const FileBrowser = React.lazy(() =>
@@ -26,6 +28,7 @@ function MobilePanelFallback({ isDark }: { isDark: boolean }) {
 
 export function TerminalMobile({ state, onBack }: TerminalMobileProps) {
   const [activeTab, setActiveTab] = React.useState<MobileTab>("terminal");
+  const [copySnapshot, setCopySnapshot] = React.useState<TerminalBufferSnapshot | null>(null);
   const { syncTerminalSize, terminalInstance, scrollTerminal } = state;
 
   React.useEffect(() => {
@@ -39,6 +42,30 @@ export function TerminalMobile({ state, onBack }: TerminalMobileProps) {
     syncTerminalSize(term, { force: true });
     term.focus();
   }, [activeTab, syncTerminalSize, terminalInstance]);
+
+  React.useEffect(() => {
+    setCopySnapshot(null);
+  }, [state.sessionId]);
+
+  const openCopyMode = React.useCallback(() => {
+    const buffer = terminalInstance.current?.buffer.active;
+    if (!buffer) {
+      return;
+    }
+    setCopySnapshot(createTerminalBufferSnapshot(buffer));
+  }, [terminalInstance]);
+
+  const closeCopyMode = React.useCallback(() => {
+    setCopySnapshot(null);
+    window.requestAnimationFrame(() => terminalInstance.current?.focus());
+  }, [terminalInstance]);
+
+  const changeTab = React.useCallback((tab: MobileTab) => {
+    if (tab !== "terminal") {
+      setCopySnapshot(null);
+    }
+    setActiveTab(tab);
+  }, []);
 
   const actions = [
     {
@@ -55,8 +82,8 @@ export function TerminalMobile({ state, onBack }: TerminalMobileProps) {
     },
     {
       key: "copy",
-      label: state.t("复制", "Copy"),
-      onClick: state.handleCopySelection,
+      label: state.t("选择复制", "Select and copy"),
+      onClick: openCopyMode,
       variant: "secondary" as const,
     },
     {
@@ -65,19 +92,13 @@ export function TerminalMobile({ state, onBack }: TerminalMobileProps) {
       onClick: state.handleClear,
       variant: "ghost" as const,
     },
-    {
-      key: "select",
-      label: state.t("全选", "Select all"),
-      onClick: state.handleSelectAll,
-      variant: "ghost" as const,
-    },
   ];
 
   const shouldShowReconnect = state.connectionState === "closed" && state.reconnectCountdown === null;
   const shouldShowCancelReconnect = state.connectionState === "closed" && state.reconnectCountdown !== null;
 
   return (
-    <div className={`flex min-h-screen flex-col transition-colors duration-300 ${state.isDark ? "bg-slate-950 text-slate-100 dark-scrollbar" : "bg-gray-100 text-slate-900 light-scrollbar"}`}>
+    <div className={`flex h-screen flex-col overflow-hidden transition-colors duration-300 supports-[height:100dvh]:h-dvh ${state.isDark ? "bg-slate-950 text-slate-100 dark-scrollbar" : "bg-gray-100 text-slate-900 light-scrollbar"}`}>
       <div className={`border-b px-4 py-3 ${state.isDark ? "border-slate-800" : "border-slate-200 bg-white"}`}>
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -88,7 +109,7 @@ export function TerminalMobile({ state, onBack }: TerminalMobileProps) {
               {state.sessionInfo ? new Date(state.sessionInfo.started_at).toLocaleString() : ""}
             </div>
           </div>
-          <Button variant="secondary" lightMode={!state.isDark} onClick={onBack} className="px-3 py-2 text-xs whitespace-nowrap">
+          <Button variant="secondary" lightMode={!state.isDark} onClick={onBack} className="min-h-11 px-3 py-2 text-xs whitespace-nowrap">
             {state.t("返回", "Back")}
           </Button>
         </div>
@@ -110,7 +131,7 @@ export function TerminalMobile({ state, onBack }: TerminalMobileProps) {
               variant={action.variant}
               lightMode={!state.isDark}
               onClick={action.onClick}
-              className="px-3 py-2 text-xs whitespace-nowrap"
+              className="min-h-11 px-3 py-2 text-xs whitespace-nowrap"
             >
               {action.label}
             </Button>
@@ -120,7 +141,7 @@ export function TerminalMobile({ state, onBack }: TerminalMobileProps) {
               variant="ghost"
               lightMode={!state.isDark}
               onClick={state.handleCancelReconnect}
-              className="px-3 py-2 text-xs whitespace-nowrap"
+              className="min-h-11 px-3 py-2 text-xs whitespace-nowrap"
             >
               {state.t("取消重连", "Cancel reconnect")}
             </Button>
@@ -130,7 +151,7 @@ export function TerminalMobile({ state, onBack }: TerminalMobileProps) {
               variant="secondary"
               lightMode={!state.isDark}
               onClick={state.handleReconnect}
-              className="px-3 py-2 text-xs whitespace-nowrap"
+              className="min-h-11 px-3 py-2 text-xs whitespace-nowrap"
             >
               {state.t("重连", "Reconnect")}
             </Button>
@@ -178,6 +199,15 @@ export function TerminalMobile({ state, onBack }: TerminalMobileProps) {
                 ↓
               </button>
             </div>
+            {copySnapshot ? (
+              <TerminalCopyPanel
+                snapshot={copySnapshot}
+                isDark={state.isDark}
+                t={state.t}
+                onCopy={state.copyText}
+                onClose={closeCopyMode}
+              />
+            ) : null}
           </div>
         </div>
 
@@ -227,7 +257,7 @@ export function TerminalMobile({ state, onBack }: TerminalMobileProps) {
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setActiveTab(tab.key as MobileTab)}
+                onClick={() => changeTab(tab.key as MobileTab)}
                 className={`flex-1 py-3 text-sm font-medium transition ${
                   active
                     ? (state.isDark ? "text-indigo-300" : "text-indigo-600")

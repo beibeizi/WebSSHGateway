@@ -1,3 +1,4 @@
+import { it } from "vitest";
 import {
   buildSessionGroups,
   formatBytesPerSecond,
@@ -38,10 +39,7 @@ function assertDeepEqual(actual: unknown, expected: unknown, message: string) {
   }
 }
 
-function test(name: string, run: () => void) {
-  run();
-  console.log(`PASS ${name}`);
-}
+const test = it;
 
 class MemoryStorage {
   private readonly data = new Map<string, string>();

@@ -2,6 +2,27 @@ import type { NetworkProfile } from "../../context/AppContextCore";
 
 export type TargetNetworkProfile = "good" | "degraded" | "poor" | "unknown";
 
+export type TerminalBufferLineSource = {
+  readonly isWrapped: boolean;
+  translateToString: (trimRight?: boolean, startColumn?: number, endColumn?: number) => string;
+};
+
+export type TerminalBufferSource = {
+  readonly length: number;
+  getLine: (index: number) => TerminalBufferLineSource | undefined;
+};
+
+export type TerminalBufferSnapshot = {
+  text: string;
+  loadedLines: number;
+  truncated: boolean;
+};
+
+type TerminalBufferSnapshotLimits = {
+  maxLines?: number;
+  maxChars?: number;
+};
+
 export const NETWORK_PROFILE_RANK: Record<NetworkProfile, number> = {
   good: 0,
   degraded: 1,
@@ -69,6 +90,8 @@ export const lightTerminalTheme = {
 
 export const WHEEL_PIXEL_PER_LINE = 40;
 export const LATENCY_HISTORY_SIZE = 30;
+export const TERMINAL_COPY_MAX_LINES = 10_000;
+export const TERMINAL_COPY_MAX_CHARS = 1024 * 1024;
 const ALT_SCREEN_SEQUENCE = /\x1b\[\?(?:1049|1047|47)[hl]/g;
 const HARD_RESET_SEQUENCE = /\x1bc/g;
 const CLEAR_SCROLLBACK_SEQUENCE = /\x1b\[(?:3|2;3)J/g;
@@ -87,6 +110,83 @@ const SANITIZE_TARGET_MAX_LENGTH = SANITIZE_TARGET_SEQUENCES.reduce(
   (max, sequence) => Math.max(max, sequence.length),
   0
 );
+
+function positiveInteger(value: number | undefined, fallback: number): number {
+  if (!Number.isFinite(value) || !value || value < 1) {
+    return fallback;
+  }
+  return Math.floor(value);
+}
+
+function safeUtf16Suffix(value: string, maxChars: number): string {
+  if (value.length <= maxChars) {
+    return value;
+  }
+  let start = value.length - maxChars;
+  const firstCodeUnit = value.charCodeAt(start);
+  const previousCodeUnit = value.charCodeAt(start - 1);
+  const startsWithLowSurrogate = firstCodeUnit >= 0xdc00 && firstCodeUnit <= 0xdfff;
+  const followsHighSurrogate = previousCodeUnit >= 0xd800 && previousCodeUnit <= 0xdbff;
+  if (startsWithLowSurrogate && followsHighSurrogate) {
+    start += 1;
+  }
+  return value.slice(start);
+}
+
+export function createTerminalBufferSnapshot(
+  buffer: TerminalBufferSource,
+  limits: TerminalBufferSnapshotLimits = {}
+): TerminalBufferSnapshot {
+  const bufferLength = Math.max(0, Math.floor(buffer.length));
+  if (bufferLength === 0) {
+    return { text: "", loadedLines: 0, truncated: false };
+  }
+
+  const maxLines = positiveInteger(limits.maxLines, TERMINAL_COPY_MAX_LINES);
+  const maxChars = positiveInteger(limits.maxChars, TERMINAL_COPY_MAX_CHARS);
+  let startIndex = Math.max(0, bufferLength - maxLines);
+  while (startIndex > 0 && buffer.getLine(startIndex)?.isWrapped) {
+    startIndex -= 1;
+  }
+
+  const reverseLines: Array<{ text: string; isWrapped: boolean; index: number }> = [];
+  let usedChars = 0;
+  let stoppedByCharacterLimit = false;
+
+  for (let index = bufferLength - 1; index >= startIndex; index -= 1) {
+    const line = buffer.getLine(index);
+    if (!line) {
+      continue;
+    }
+    const lineText = line.translateToString(true);
+    const currentOldestLine = reverseLines[reverseLines.length - 1];
+    const separatorLength = currentOldestLine && !currentOldestLine.isWrapped ? 1 : 0;
+    const requiredChars = lineText.length + separatorLength;
+    if (usedChars + requiredChars > maxChars) {
+      stoppedByCharacterLimit = true;
+      if (reverseLines.length === 0) {
+        const suffix = safeUtf16Suffix(lineText, maxChars);
+        reverseLines.push({ text: suffix, isWrapped: false, index });
+      }
+      break;
+    }
+    reverseLines.push({ text: lineText, isWrapped: line.isWrapped, index });
+    usedChars += requiredChars;
+  }
+
+  const orderedLines = reverseLines.reverse();
+  const text = orderedLines
+    .map((line, index) => `${index > 0 && !line.isWrapped ? "\n" : ""}${line.text}`)
+    .join("")
+    .replace(/\n+$/, "");
+  const firstIncludedIndex = orderedLines[0]?.index ?? bufferLength;
+
+  return {
+    text,
+    loadedLines: orderedLines.length,
+    truncated: stoppedByCharacterLimit || firstIncludedIndex > 0,
+  };
+}
 
 export function normalizeWheelDeltaToLines(event: WheelEvent, terminalRows: number): number {
   let lineDelta = event.deltaY;
