@@ -210,6 +210,7 @@ async def resolve_ssh_client(
         yield client
     finally:
         client.close()
+        await client.wait_closed()
 
 
 async def run_ssh_command(session_or_client, command: str, timeout: float = 5.0) -> str:
