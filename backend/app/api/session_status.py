@@ -6,15 +6,9 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app.api.dependencies import get_current_user, get_db, get_state
-from app.api.system import (
-    NetworkInfo,
-    SystemStats,
-    parse_cpu_info,
-    parse_memory_info,
-    parse_network_stats,
-    resolve_ssh_client,
-    run_ssh_command,
-)
+from app.api.system import resolve_ssh_client
+from app.schemas.system_metrics import NetworkInfo, SystemStats
+from app.services.system_metrics import collect_network_stats, collect_system_stats, detect_metrics_platform
 
 
 router = APIRouter(prefix="/system", tags=["system"])
@@ -27,26 +21,14 @@ class SessionStatusSummary(BaseModel):
 
 async def collect_session_status_summary(client) -> SessionStatusSummary:
     """采集会话卡片所需的轻量系统摘要，避免拉取进程和磁盘列表。"""
-    stat1, meminfo, cpuinfo, net1 = await asyncio.gather(
-        run_ssh_command(client, "cat /proc/stat"),
-        run_ssh_command(client, "cat /proc/meminfo"),
-        run_ssh_command(client, "cat /proc/cpuinfo"),
-        run_ssh_command(client, "cat /proc/net/dev"),
+    platform = await detect_metrics_platform(client)
+    stats, network = await asyncio.gather(
+        collect_system_stats(client, platform),
+        collect_network_stats(client, platform),
     )
-
-    interval = 0.5
-    await asyncio.sleep(interval)
-    stat2, net2 = await asyncio.gather(
-        run_ssh_command(client, "cat /proc/stat"),
-        run_ssh_command(client, "cat /proc/net/dev"),
-    )
-
-    memory, swap = parse_memory_info(meminfo)
-    cpu = parse_cpu_info(stat1, stat2, cpuinfo)
-    network = parse_network_stats(net1, net2, interval)
 
     return SessionStatusSummary(
-        stats=SystemStats(cpu=cpu, memory=memory, swap=swap),
+        stats=stats,
         network=network,
     )
 
