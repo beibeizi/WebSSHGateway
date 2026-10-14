@@ -1,4 +1,4 @@
-FROM node:20-slim AS frontend-build
+FROM --platform=$BUILDPLATFORM node:20-slim AS frontend-build
 WORKDIR /frontend
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm install --legacy-peer-deps && chmod -R +x node_modules/.bin/
