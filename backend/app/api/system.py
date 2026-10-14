@@ -22,50 +22,16 @@ from app.core.logging import get_logger, get_recent_logs
 from app.models.connection import Connection
 from app.models.session import SessionRecord
 from app.services.crypto import CryptoService, EncryptedPayload
+from app.schemas.system_metrics import (
+    DiskList, NetworkInfo, ProcessList, SystemOverview, SystemStats,
+)
+from app.services.system_metrics import (
+    collect_disks, collect_network_stats, collect_processes,
+    collect_system_overview, collect_system_stats, run_ssh_command,
+)
 
 router = APIRouter(prefix="/system", tags=["system"])
 logger = get_logger(__name__)
-
-
-class MemoryInfo(BaseModel):
-    total: int  # 总量 bytes
-    used: int   # 已用 bytes
-    percent: float  # 鐧惧垎姣?
-
-
-class SwapInfo(BaseModel):
-    total: int
-    used: int
-    percent: float
-
-
-class CpuInfo(BaseModel):
-    percent: float  # CPU 使用率百分比
-    count: int      # CPU 鏍稿績鏁?
-
-
-class NetworkInfo(BaseModel):
-    upload_speed: int    # 上传速度 bytes/s
-    download_speed: int  # 下载速度 bytes/s
-
-
-class SystemStats(BaseModel):
-    cpu: CpuInfo
-    memory: MemoryInfo
-    swap: SwapInfo
-
-
-class ProcessInfo(BaseModel):
-    pid: int
-    name: str
-    command: str  # 完整命令/路径
-    cpu_percent: float
-    memory_percent: float
-    memory_bytes: int
-
-
-class ProcessList(BaseModel):
-    processes: List[ProcessInfo]
 
 
 class FileInfo(BaseModel):
@@ -82,24 +48,6 @@ class FileInfo(BaseModel):
 class DirectoryListing(BaseModel):
     path: str
     files: List[FileInfo]
-
-
-class DiskInfo(BaseModel):
-    mount: str
-    total: int
-    used: int
-    percent: float
-
-
-class DiskList(BaseModel):
-    disks: List[DiskInfo]
-
-
-class SystemOverview(BaseModel):
-    stats: SystemStats
-    network: NetworkInfo
-    processes: ProcessList
-    disks: DiskList
 
 
 class FileContent(BaseModel):
@@ -213,253 +161,6 @@ async def resolve_ssh_client(
         await client.wait_closed()
 
 
-async def run_ssh_command(session_or_client, command: str, timeout: float = 5.0) -> str:
-    """在 SSH 会话中执行命令并返回输出"""
-    try:
-        client = getattr(session_or_client, "client", session_or_client)
-        result = await asyncio.wait_for(
-            client.run(command, check=False),
-            timeout=timeout
-        )
-        return result.stdout or ""
-    except asyncio.TimeoutError:
-        logger.warning("system ssh command timed out timeout=%s command=%s", timeout, command)
-        return ""
-    except Exception as exc:
-        logger.warning("system ssh command failed command=%s error=%s", command, exc)
-        return ""
-
-
-def parse_memory_info(meminfo: str) -> tuple[MemoryInfo, SwapInfo]:
-    """解析 /proc/meminfo 输出"""
-    mem_total = mem_available = mem_free = mem_buffers = mem_cached = 0
-    swap_total = swap_free = 0
-
-    for line in meminfo.splitlines():
-        parts = line.split()
-        if len(parts) < 2:
-            continue
-        key = parts[0].rstrip(":")
-        value = int(parts[1]) * 1024  # KB to bytes
-
-        if key == "MemTotal":
-            mem_total = value
-        elif key == "MemAvailable":
-            mem_available = value
-        elif key == "MemFree":
-            mem_free = value
-        elif key == "Buffers":
-            mem_buffers = value
-        elif key == "Cached":
-            mem_cached = value
-        elif key == "SwapTotal":
-            swap_total = value
-        elif key == "SwapFree":
-            swap_free = value
-
-    # 如果没有 MemAvailable，用 Free + Buffers + Cached 估算
-    if mem_available == 0:
-        mem_available = mem_free + mem_buffers + mem_cached
-
-    mem_used = mem_total - mem_available
-    mem_percent = (mem_used / mem_total * 100) if mem_total > 0 else 0
-
-    swap_used = swap_total - swap_free
-    swap_percent = (swap_used / swap_total * 100) if swap_total > 0 else 0
-
-    return (
-        MemoryInfo(total=mem_total, used=mem_used, percent=round(mem_percent, 1)),
-        SwapInfo(total=swap_total, used=swap_used, percent=round(swap_percent, 1))
-    )
-
-
-def parse_cpu_info(stat1: str, stat2: str, cpuinfo: str) -> CpuInfo:
-    """解析 CPU 使用率"""
-    def parse_cpu_line(line: str) -> tuple[int, int]:
-        parts = line.split()
-        if len(parts) < 5:
-            return 0, 0
-        # user, nice, system, idle, iowait, irq, softirq, steal
-        values = [int(x) for x in parts[1:8] if x.isdigit()]
-        if len(values) < 4:
-            return 0, 0
-        idle = values[3]
-        total = sum(values)
-        return idle, total
-
-    idle1, total1 = 0, 0
-    idle2, total2 = 0, 0
-
-    for line in stat1.splitlines():
-        if line.startswith("cpu "):
-            idle1, total1 = parse_cpu_line(line)
-            break
-
-    for line in stat2.splitlines():
-        if line.startswith("cpu "):
-            idle2, total2 = parse_cpu_line(line)
-            break
-
-    diff_idle = idle2 - idle1
-    diff_total = total2 - total1
-    cpu_percent = 100.0 * (1.0 - diff_idle / diff_total) if diff_total > 0 else 0
-
-    # 计算 CPU 核心数
-    cpu_count = 0
-    for line in cpuinfo.splitlines():
-        if line.startswith("processor"):
-            cpu_count += 1
-    if cpu_count == 0:
-        cpu_count = 1
-
-    return CpuInfo(percent=round(cpu_percent, 1), count=cpu_count)
-
-
-def parse_network_stats(net1: str, net2: str, interval: float) -> NetworkInfo:
-    """解析 /proc/net/dev 输出计算网络速度
-    格式:
-    Inter-|   Receive                                                |  Transmit
-     face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
-        lo: 1234567   12345    0    0    0     0          0         0  1234567   12345    0    0    0     0       0          0
-      eth0: 1234567   12345    0    0    0     0          0         0  1234567   12345    0    0    0     0       0          0
-    """
-    def parse_net_dev(content: str) -> tuple[int, int]:
-        total_rx = 0
-        total_tx = 0
-        for line in content.splitlines():
-            line = line.strip()
-            if ":" not in line or line.startswith("Inter") or line.startswith("face"):
-                continue
-            # 跳过 lo 回环接口
-            if line.startswith("lo:"):
-                continue
-            parts = line.split()
-            if len(parts) < 10:
-                continue
-            try:
-                # 鎺ュ彛鍚?bytes packets ...
-                # 第一部分可能是 "eth0:1234" 或 "eth0: 1234"
-                if ":" in parts[0]:
-                    iface_data = parts[0].split(":")
-                    if len(iface_data) > 1 and iface_data[1]:
-                        rx_bytes = int(iface_data[1])
-                        tx_bytes = int(parts[7])
-                    else:
-                        rx_bytes = int(parts[1])
-                        tx_bytes = int(parts[9])
-                else:
-                    rx_bytes = int(parts[1])
-                    tx_bytes = int(parts[9])
-                total_rx += rx_bytes
-                total_tx += tx_bytes
-            except (ValueError, IndexError):
-                continue
-        return total_rx, total_tx
-
-    rx1, tx1 = parse_net_dev(net1)
-    rx2, tx2 = parse_net_dev(net2)
-
-    # 计算速度 (bytes/s)
-    download_speed = int((rx2 - rx1) / interval) if interval > 0 else 0
-    upload_speed = int((tx2 - tx1) / interval) if interval > 0 else 0
-
-    # 防止负值（可能是计数器溢出）
-    download_speed = max(0, download_speed)
-    upload_speed = max(0, upload_speed)
-
-    return NetworkInfo(upload_speed=upload_speed, download_speed=download_speed)
-
-
-def parse_processes(ps_output: str) -> List[ProcessInfo]:
-    """解析 ps 命令输出
-    ps aux 输出格式:
-    USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
-    root         1  0.0  0.1 169436 11896 ?        Ss   Feb28   0:03 /sbin/init
-    """
-    processes = []
-    lines = ps_output.strip().splitlines()
-
-    for line in lines[1:]:  # 跳过表头
-        parts = line.split()
-        if len(parts) < 11:
-            continue
-        try:
-            pid = int(parts[1])
-            cpu_percent = float(parts[2])
-            mem_percent = float(parts[3])
-            mem_kb = int(parts[5])  # RSS 鏄 6 鍒?(index 5)
-            # COMMAND 鏄粠绗?11 鍒楀紑濮嬪埌琛屽熬
-            command = " ".join(parts[10:])
-            # 取命令名，去掉路径和参数
-            name = command.split()[0].split("/")[-1] if command else "unknown"
-            # 去掉方括号（内核线程）
-            name = name.strip("[]")
-
-            processes.append(ProcessInfo(
-                pid=pid,
-                name=name[:32],  # 限制长度
-                command=command[:256],  # 完整命令，限制长度
-                cpu_percent=cpu_percent,
-                memory_percent=mem_percent,
-                memory_bytes=mem_kb * 1024,
-            ))
-        except (ValueError, IndexError):
-            continue
-
-    return processes
-
-
-def parse_disks(df_output: str) -> List[DiskInfo]:
-    """解析 df 输出并返回挂载信息"""
-    disks = []
-    for line in df_output.strip().splitlines():
-        parts = line.split()
-        if len(parts) >= 6:
-            try:
-                total = int(parts[1])
-                used = int(parts[2])
-                percent = float(parts[4].rstrip("%"))
-                mount = parts[5]
-                disks.append(DiskInfo(mount=mount, total=total, used=used, percent=percent))
-            except (ValueError, IndexError):
-                continue
-    return disks
-
-
-async def collect_system_overview(session) -> SystemOverview:
-    """一次性采集系统监控需要的全部信息，降低前端请求次数。"""
-    stat1, meminfo, cpuinfo, net1, ps_output, df_output = await asyncio.gather(
-        run_ssh_command(session, "cat /proc/stat"),
-        run_ssh_command(session, "cat /proc/meminfo"),
-        run_ssh_command(session, "cat /proc/cpuinfo"),
-        run_ssh_command(session, "cat /proc/net/dev"),
-        run_ssh_command(session, "ps aux 2>/dev/null || ps -ef 2>/dev/null", timeout=5.0),
-        run_ssh_command(session, "df -B1 | grep '^/'", timeout=5.0),
-    )
-
-    # 等待一次采样间隔，计算 CPU 与网络速度
-    interval = 0.5
-    await asyncio.sleep(interval)
-    stat2, net2 = await asyncio.gather(
-        run_ssh_command(session, "cat /proc/stat"),
-        run_ssh_command(session, "cat /proc/net/dev"),
-    )
-
-    memory, swap = parse_memory_info(meminfo)
-    cpu = parse_cpu_info(stat1, stat2, cpuinfo)
-    network = parse_network_stats(net1, net2, interval)
-    processes = parse_processes(ps_output)
-    processes.sort(key=lambda x: x.memory_bytes, reverse=True)
-    disks = parse_disks(df_output)
-
-    return SystemOverview(
-        stats=SystemStats(cpu=cpu, memory=memory, swap=swap),
-        network=network,
-        processes=ProcessList(processes=processes[:20]),
-        disks=DiskList(disks=disks),
-    )
-
-
 @router.get("/logs", response_model=SystemLogList)
 def get_system_logs(
     limit: int = Query(default=200, ge=1, le=1000),
@@ -485,20 +186,7 @@ async def get_system_stats(
 ) -> SystemStats:
     """获取远程服务器系统状态信息（CPU、内存、交换区）"""
     async with resolve_ssh_client(session_id, state, user, db) as client:
-        stat1, meminfo, cpuinfo = await asyncio.gather(
-            run_ssh_command(client, "cat /proc/stat"),
-            run_ssh_command(client, "cat /proc/meminfo"),
-            run_ssh_command(client, "cat /proc/cpuinfo"),
-        )
-
-        interval = 0.3
-        await asyncio.sleep(interval)
-        stat2 = await run_ssh_command(client, "cat /proc/stat")
-
-        memory, swap = parse_memory_info(meminfo)
-        cpu = parse_cpu_info(stat1, stat2, cpuinfo)
-
-        return SystemStats(cpu=cpu, memory=memory, swap=swap)
+        return await collect_system_stats(client)
 
 
 @router.get("/network/{session_id}", response_model=NetworkInfo)
@@ -510,12 +198,7 @@ async def get_network_stats(
 ) -> NetworkInfo:
     """获取远程服务器网络速度"""
     async with resolve_ssh_client(session_id, state, user, db) as client:
-        net1 = await run_ssh_command(client, "cat /proc/net/dev")
-        interval = 0.5
-        await asyncio.sleep(interval)
-        net2 = await run_ssh_command(client, "cat /proc/net/dev")
-
-        return parse_network_stats(net1, net2, interval)
+        return await collect_network_stats(client)
 
 
 @router.get("/processes/{session_id}", response_model=ProcessList)
@@ -527,15 +210,7 @@ async def get_processes(
 ) -> ProcessList:
     """获取远程服务器进程列表"""
     async with resolve_ssh_client(session_id, state, user, db) as client:
-        ps_output = await run_ssh_command(
-            client,
-            "ps aux 2>/dev/null || ps -ef 2>/dev/null",
-            timeout=5.0
-        )
-
-        processes = parse_processes(ps_output)
-        processes.sort(key=lambda x: x.memory_bytes, reverse=True)
-        return ProcessList(processes=processes[:20])
+        return await collect_processes(client)
 
 
 def parse_ls_output(ls_output: str, base_path: str) -> List[FileInfo]:
@@ -655,9 +330,7 @@ async def get_disks(
 ) -> DiskList:
     """获取磁盘挂载信息"""
     async with resolve_ssh_client(session_id, state, user, db) as client:
-        df_output = await run_ssh_command(client, "df -B1 | grep '^/'", timeout=5.0)
-
-        return DiskList(disks=parse_disks(df_output))
+        return await collect_disks(client)
 
 
 @router.get("/overview/{session_id}", response_model=SystemOverview)
@@ -685,7 +358,10 @@ async def read_file(
     async with resolve_ssh_client(session_id, state, user, db) as client:
         clean_path = sanitize_shell_path(path)
 
-        size_check = await run_ssh_command(client, f"stat -c %s '{clean_path}' 2>/dev/null || echo 0")
+        size_check = await run_ssh_command(
+            client,
+            f"stat -c %s '{clean_path}' 2>/dev/null || stat -f %z '{clean_path}' 2>/dev/null || echo 0",
+        )
         size = int(size_check.strip() or 0)
 
         if size > 1024 * 1024 and not force:
